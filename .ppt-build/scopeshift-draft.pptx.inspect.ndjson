@@ -1,0 +1,102 @@
+{"kind":"deck","id":"pr/2ey9in","name":"Deck"}
+{"kind":"layout","layoutId":"/ppt/slideMasters/slideMaster1.xml","name":"","type":"master","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout1.xml","name":"BLANK","type":"blank","placeholders":[{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout2.xml","name":"TITLE","type":"title","placeholders":[{"name":"title","type":"title"},{"name":"subtitle","type":"subtitle"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout3.xml","name":"OBJECT","type":"obj","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout4.xml","name":"SECTION_HEADER","type":"secHead","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout5.xml","name":"TWO_OBJECTS","type":"twoObj","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout6.xml","name":"TWO_OBJECTS_WITH_TEXT","type":"twoTxTwoObj","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"body","type":"body"},{"name":"body","type":"body"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout7.xml","name":"TITLE_ONLY","type":"titleOnly","placeholders":[{"name":"title","type":"title"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout8.xml","name":"OBJECT_WITH_CAPTION_TEXT","type":"objTx","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout9.xml","name":"PICTURE_WITH_CAPTION_TEXT","type":"picTx","placeholders":[{"name":"title","type":"title"},{"name":"picture","type":"picture"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout10.xml","name":"VERTICAL_TEXT","type":"vertTx","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"layout","layoutId":"/ppt/slideLayouts/slideLayout11.xml","name":"VERTICAL_TITLE_AND_VERTICAL_TEXT","type":"vertTitleAndTx","placeholders":[{"name":"title","type":"title"},{"name":"body","type":"body"},{"name":"dateTime","type":"dateTime"},{"name":"footer","type":"footer"},{"name":"slideNumber","type":"slideNumber","textPreview":"‹#›"}]}
+{"kind":"slide","id":"sl/y90nupkv","slide":1,"title":"MANIPAL","textShapes":18}
+{"kind":"shape","id":"sh/3ahk3u54","slide":1,"name":"Google Shape;84;p1","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/298ju94j","slide":1,"name":"Google Shape;85;p1","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"shape","id":"sh/pcz254na","slide":1,"name":"Google Shape;86;p1","bbox":[133.79,32.27,1542.55,115.65]}
+{"kind":"shape","id":"sh/4bq1wzmp","slide":1,"name":"Google Shape;87;p1","bbox":[167.07,38.1,64.07,87.36]}
+{"kind":"shape","id":"sh/f6x0zu58","slide":1,"name":"Google Shape;88;p1","bbox":[463.6,39.13,94.62,94.62]}
+{"kind":"shape","id":"sh/u5ojqpon","slide":1,"name":"Google Shape;89;p1","bbox":[1430.84,51.27,123.14,64.7]}
+{"kind":"shape","id":"sh/kbmh0v25","slide":1,"name":"Google Shape;90;p1","bbox":[622.22,56.52,180.78,65.74]}
+{"kind":"shape","id":"sh/5cvy903q","slide":1,"name":"Google Shape;91;p1","bbox":[867,51.27,154.76,70.34]}
+{"kind":"shape","id":"sh/ip4zyl4f","slide":1,"name":"Google Shape;92;p1","bbox":[1085.75,51.27,281.09,61.49]}
+{"kind":"textbox","id":"sh/jadg7ql0","slide":1,"name":"Google Shape;93;p1","text":"MANIPAL","textPreview":"MANIPAL","textChars":7,"textLines":1,"bbox":[225.65,50.52,173.81,48.43]}
+{"kind":"textbox","id":"sh/sf6h4v2h","slide":1,"name":"Google Shape;94;p1","text":"ACADEMY OF HIGHER EDUCATION","textPreview":"ACADEMY OF HIGHER EDUCATION","textChars":27,"textLines":1,"bbox":[225.65,87.55,173.81,31.76]}
+{"kind":"textbox","id":"sh/tgfyd032","slide":1,"name":"Google Shape;95;p1","text":"Institution of Embrace Diamant in the University","textPreview":"Institution of Embrace Diamant in the University","textChars":48,"textLines":1,"bbox":[225.65,115.31,173.81,13.92]}
+{"kind":"shape","id":"sh/6d4z25kb","slide":1,"name":"Google Shape;96;p1","bbox":[1275,406.24,645,673.76]}
+{"kind":"textbox","id":"sh/8j2xsbmd","slide":1,"name":"Google Shape;98;p1","text":"ScopeShift","textPreview":"ScopeShift","textChars":10,"textLines":1,"bbox":[141.53,167.26,1043.7,316.19]}
+{"kind":"shape","id":"sh/9kby1g3i","slide":1,"name":"Google Shape;99;p1","bbox":[294.26,409.57,735.98,82.48]}
+{"kind":"shape","id":"sh/yhkza1wv","slide":1,"name":"Google Shape;100;p1","bbox":[108,490.89,1105.91,194]}
+{"kind":"shape","id":"sh/jitg36dg","slide":1,"name":"Google Shape;101;p1","bbox":[378.33,538.51,50.45,97.58]}
+{"kind":"shape","id":"sh/kj2hcbel","slide":1,"name":"Google Shape;102;p1","bbox":[869.85,538.51,6.47,97.58]}
+{"kind":"textbox","id":"sh/l4by5wv6","slide":1,"name":"Google Shape;103;p1","text":"Evidence-governed BRD generation","textPreview":"Evidence-governed BRD generation","textChars":32,"textLines":1,"bbox":[321.66,422,633.12,139.01]}
+{"kind":"textbox","id":"sh/654ze1wr","slide":1,"name":"Google Shape;104;p1","text":"PS42","textPreview":"PS42","textChars":4,"textLines":1,"bbox":[183.91,537.95,211.92,94.82]}
+{"kind":"textbox","id":"sh/76dg76dc","slide":1,"name":"Google Shape;105;p1","text":"A working product path","textPreview":"A working product path","textChars":22,"textLines":1,"bbox":[493.85,580.99,304.63,58.44]}
+{"kind":"textbox","id":"sh/87mhgbex","slide":1,"name":"Google Shape;106;p1","text":"HACK SPRINT","textPreview":"HACK SPRINT","textChars":11,"textLines":1,"bbox":[199.81,620.27,121.86,61.54]}
+{"kind":"textbox","id":"sh/t8vy9gvi","slide":1,"name":"Google Shape;107;p1","text":"VENUE DETAILS","textPreview":"VENUE DETAILS","textChars":13,"textLines":1,"bbox":[544.18,543.35,201.32,27.24]}
+{"kind":"textbox","id":"sh/m90f2hwn","slide":1,"name":"Google Shape;108;p1","text":"17–18 OCTOBER 2026","textPreview":"17–18 OCTOBER 2026","textChars":18,"textLines":1,"bbox":[997.16,568.55,143.06,97.06]}
+{"kind":"textbox","id":"sh/na9gvmd8","slide":1,"name":"Google Shape;109;p1","text":"24-hour build","textPreview":"24-hour build","textChars":13,"textLines":1,"bbox":[933.58,598.96,211.92,32.35]}
+{"kind":"shape","id":"sh/ofqtoj2h","slide":1,"name":"Google Shape;111;p1","bbox":[122.5,915,1475,114]}
+{"kind":"shape","id":"sh/3ehsve1w","slide":1,"name":"Google Shape;112;p1","bbox":[982.96,952.8,207.08,45.34]}
+{"kind":"textbox","id":"sh/2d8rm9kb","slide":1,"name":"Google Shape;113;p1","text":"REGISTER NOW","textPreview":"REGISTER NOW","textChars":12,"textLines":1,"bbox":[230.53,932.8,131.07,65.34]}
+{"kind":"textbox","id":"sh/dkja1ojy","slide":1,"name":"Google Shape;114;p1","text":"Team Size\n1-4 Members","textPreview":"Team Size | 1-4 Members","textChars":21,"textLines":2,"bbox":[687.24,934.9,137.22,60.38]}
+{"kind":"textbox","id":"sh/cjatsj2d","slide":1,"name":"Google Shape;115;p1","text":"ORGANIZED BY:","textPreview":"ORGANIZED BY:","textChars":13,"textLines":1,"bbox":[1101.19,925.25,168.48,23]}
+{"kind":"shape","id":"sh/bi1sze1s","slide":1,"name":"Google Shape;116;p1","bbox":[1264.39,933.29,56.78,77.43]}
+{"kind":"textbox","id":"sh/qhsbq9k7","slide":1,"name":"Google Shape;117;p1","text":"MANIPAL","textPreview":"MANIPAL","textChars":7,"textLines":1,"bbox":[1313.46,951.93,99.26,27]}
+{"kind":"textbox","id":"sh/tofapkju","slide":1,"name":"Google Shape;118;p1","text":"ACADEMY OF HIGHER EDUCATION","textPreview":"ACADEMY OF HIGHER EDUCATION","textChars":27,"textLines":1,"bbox":[1313.46,975.07,154.04,26.26]}
+{"kind":"textbox","id":"sh/sn69gf29","slide":1,"name":"Google Shape;119;p1","text":"Institution of Embrace Diamant in the University","textPreview":"Institution of Embrace Diamant in the University","textChars":48,"textLines":1,"bbox":[1313.46,999.67,154.04,10.91]}
+{"kind":"textbox","id":"sh/kratwza5","slide":1,"name":"Google Shape;120;p1","text":"TEAM: SCOPE SHIFT\n\nTRACK: PS42","textPreview":"TEAM: SCOPE SHIFT |  | TRACK: PS42","textChars":30,"textLines":3,"bbox":[167.07,684.88,215.42,212.63]}
+{"kind":"notes","id":"nt/y90nupkv","slide":1,"text":"ScopeShift: evidence-governed BRD generation. No unmeasured performance claims are made."}
+{"kind":"slide","id":"sl/hwbqtkby","slide":2,"title":"The problem","textShapes":4}
+{"kind":"shape","id":"sh/5k32lo7a","slide":2,"name":"Google Shape;125;p2","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/ihc3at8z","slide":2,"name":"Google Shape;126;p2","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/3ilkjepk","slide":2,"name":"Google Shape;127;p2","text":"The problem","textPreview":"The problem","textChars":11,"textLines":1,"bbox":[108,88,806.91,191.57]}
+{"kind":"textbox","id":"sh/kna10zql","slide":2,"text":"One checkout feature\nBRD: UPI only\nScreenshot: Card button visible\nClient note: Card is in scope","textPreview":"One checkout feature | BRD: UPI only | Screenshot: Card button visible | Client note: Card is in scope","textChars":96,"textLines":4,"bbox":[120,340,500,340]}
+{"kind":"textbox","id":"sh/loj294r6","slide":2,"text":"The failure mode\nAI can summarize all three sources.\nIt cannot safely decide what becomes a requirement without an explicit authority rule.","textPreview":"The failure mode | AI can summarize all three sources. | It cannot safely decide what becomes a requirement without an explicit authority...","textChars":139,"textLines":3,"bbox":[700,340,500,340]}
+{"kind":"textbox","id":"sh/nu9wvmd0","slide":2,"text":"The missing layer is governance.","textPreview":"The missing layer is governance.","textChars":32,"textLines":1,"bbox":[1260,410,500,120]}
+{"kind":"notes","id":"nt/hwbqtkby","slide":2,"text":"Scenario is the product fixture in the repository. Claims describe the test scenario, not measured customer prevalence."}
+{"kind":"slide","id":"sl/ofy9wn61","slide":3,"title":"The solution","textShapes":5}
+{"kind":"shape","id":"sh/8jexgj61","slide":3,"name":"Google Shape;132;p3","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/tknypo76","slide":3,"name":"Google Shape;133;p3","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/ulwfitor","slide":3,"name":"Google Shape;134;p3","text":"The solution","textPreview":"The solution","textChars":12,"textLines":1,"bbox":[108,88,1388.22,191.57]}
+{"kind":"textbox","id":"sh/vm5grypc","slide":3,"text":"1  Extract\nGemini returns structured claims, quotes, and proposed scope changes.","textPreview":"1  Extract | Gemini returns structured claims, quotes, and proposed scope changes.","textChars":80,"textLines":2,"bbox":[120,310,380,300]}
+{"kind":"textbox","id":"sh/gnexk36x","slide":3,"text":"2  Validate\nCode checks schema, claim allowlist, and quote provenance.","textPreview":"2  Validate | Code checks schema, claim allowlist, and quote provenance.","textChars":70,"textLines":2,"bbox":[560,310,380,300]}
+{"kind":"textbox","id":"sh/honyt87i","slide":3,"text":"3  Resolve\nThe resolver computes the current BRD from active evidence and events.","textPreview":"3  Resolve | The resolver computes the current BRD from active evidence and events.","textChars":81,"textLines":2,"bbox":[1000,310,380,300]}
+{"kind":"textbox","id":"sh/apsf6pon","slide":3,"text":"4  Explain\nEvery requirement shows what governed it, what it replaced, and why it disappeared.","textPreview":"4  Explain | Every requirement shows what governed it, what it replaced, and why it disappeared.","textChars":94,"textLines":2,"bbox":[1440,310,360,300]}
+{"kind":"notes","id":"nt/ofy9wn61","slide":3,"text":"Gemini is an extractor. Authority is decided in application code."}
+{"kind":"slide","id":"sl/jyx0ra1s","slide":4,"title":"Live proof: DISPUTED → GOVERNED → DISPUTED","textShapes":4}
+{"kind":"shape","id":"sh/mpg7apkz","slide":4,"name":"Google Shape;139;p4","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/mtor6d8b","slide":4,"name":"Google Shape;140;p4","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/7uxsfy9w","slide":4,"text":"Live proof: DISPUTED → GOVERNED → DISPUTED","textPreview":"Live proof: DISPUTED → GOVERNED → DISPUTED","textChars":42,"textLines":1,"bbox":[108,88,1600,150]}
+{"kind":"textbox","id":"sh/8v6983qh","slide":4,"text":"01  DISPUTED\nBRD and screenshot conflict.\nRequirement withheld.","textPreview":"01  DISPUTED | BRD and screenshot conflict. | Requirement withheld.","textChars":63,"textLines":3,"bbox":[120,360,480,320]}
+{"kind":"textbox","id":"sh/9wfah8rm","slide":4,"text":"02  GOVERNED\nVerified client note authorizes Card.\nRequirement enters the BRD.","textPreview":"02  GOVERNED | Verified client note authorizes Card. | Requirement enters the BRD.","textChars":78,"textLines":3,"bbox":[720,360,480,320]}
+{"kind":"textbox","id":"sh/uxobad87","slide":4,"text":"03  DISPUTED\nDecision removed.\nResolver recomputes from remaining evidence.","textPreview":"03  DISPUTED | Decision removed. | Resolver recomputes from remaining evidence.","textChars":75,"textLines":3,"bbox":[1320,360,480,320]}
+{"kind":"notes","id":"nt/jyx0ra1s","slide":4,"text":"This state transition is covered by the repository tests and the local browser demo."}
+{"kind":"slide","id":"sl/i107q5of","slide":5,"title":"Data flow","textShapes":6}
+{"kind":"shape","id":"sh/3qhojq9s","slide":5,"name":"Google Shape;145;p5","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/4rqpsvad","slide":5,"name":"Google Shape;146;p5","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/5sz6l0ry","slide":5,"name":"Google Shape;147;p5","text":"Data flow","textPreview":"Data flow","textChars":9,"textLines":1,"bbox":[108,88,1388.22,191.57]}
+{"kind":"textbox","id":"sh/2ls72p8r","slide":5,"text":"Sources\nPDF · screenshot · client note","textPreview":"Sources | PDF · screenshot · client note","textChars":38,"textLines":2,"bbox":[120,330,330,250]}
+{"kind":"textbox","id":"sh/nml8va9w","slide":5,"text":"Evidence\nStructured claims with validated quotes","textPreview":"Evidence | Structured claims with validated quotes","textChars":48,"textLines":2,"bbox":[520,330,330,250]}
+{"kind":"textbox","id":"sh/xgna1obe","slide":5,"text":"Event log\nBigQuery in production architecture\nSQLite in the local demo","textPreview":"Event log | BigQuery in production architecture | SQLite in the local demo","textChars":70,"textLines":3,"bbox":[920,330,330,250]}
+{"kind":"textbox","id":"sh/cfe9sjat","slide":5,"text":"Resolver\nDeterministic projection of the current BRD","textPreview":"Resolver | Deterministic projection of the current BRD","textChars":52,"textLines":2,"bbox":[1320,330,330,250]}
+{"kind":"textbox","id":"sh/be5szet8","slide":5,"text":"Evidence → event log → resolver → current BRD","textPreview":"Evidence → event log → resolver → current BRD","textChars":45,"textLines":1,"bbox":[370,720,1200,80]}
+{"kind":"notes","id":"nt/i107q5of","slide":5,"text":"The local demo reads through a replayed snapshot. BigQuery is the persisted append-only log in the target architecture."}
+{"kind":"slide","id":"sl/x8f69ofe","slide":6,"title":"Prototype screen","textShapes":5}
+{"kind":"shape","id":"sh/wz6h8j6l","slide":6,"name":"Google Shape;152;p6","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/xkfi1o76","slide":6,"name":"Google Shape;153;p6","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/mt4z29oj","slide":6,"name":"Google Shape;154;p6","text":"Prototype screen","textPreview":"Prototype screen","textChars":16,"textLines":1,"bbox":[108,91,1128.75,155.76]}
+{"kind":"textbox","id":"sh/nud0vep4","slide":6,"text":"Sources\nSRC-01  BRD\nSRC-02  Screenshot\nSRC-03  Client note","textPreview":"Sources | SRC-01  BRD | SRC-02  Screenshot | SRC-03  Client note","textChars":58,"textLines":4,"bbox":[120,310,390,350]}
+{"kind":"textbox","id":"sh/ovmh4j69","slide":6,"text":"Event log\n1  ADDED  SRC-01\n2  ADDED  SRC-02\n3  ADDED  SRC-03\n4  REMOVED  SRC-03","textPreview":"Event log | 1  ADDED  SRC-01 | 2  ADDED  SRC-02 | 3  ADDED  SRC-03 | 4  REMOVED  SRC-03","textChars":79,"textLines":5,"bbox":[590,310,460,350]}
+{"kind":"textbox","id":"sh/9wfixo7u","slide":6,"text":"Current BRD\nDISPUTED\n\nRequirement withheld\n\nReason: no active governing decision","textPreview":"Current BRD | DISPUTED |  | Requirement withheld |  | Reason: no active governing decision","textChars":80,"textLines":6,"bbox":[1130,310,580,350]}
+{"kind":"textbox","id":"sh/6p8jeton","slide":6,"text":"The judge can watch the requirement appear and disappear from the same evidence history.","textPreview":"The judge can watch the requirement appear and disappear from the same evidence history.","textChars":88,"textLines":1,"bbox":[220,760,1500,70]}
+{"kind":"notes","id":"nt/x8f69ofe","slide":6,"text":"The screenshot is represented by the working local browser UI. Replace this slide with an actual screenshot after the UI is opened and captured."}
+{"kind":"slide","id":"sl/gnmp4jqx","slide":7,"title":"Validation","textShapes":4}
+{"kind":"shape","id":"sh/1w3mhona","slide":7,"name":"Google Shape;159;p7","bbox":[0,0,1920,1080]}
+{"kind":"shape","id":"sh/hsv2lkfy","slide":7,"name":"Google Shape;160;p7","bbox":[558.22,-474.37,2329.52,1986.44]}
+{"kind":"textbox","id":"sh/wrmlsfed","slide":7,"name":"Google Shape;161;p7","text":"Validation","textPreview":"Validation","textChars":10,"textLines":1,"bbox":[108,91,580.97,155.76]}
+{"kind":"textbox","id":"sh/vqdkjaxs","slide":7,"text":"Verified now\nCore replay tests\nInvalid transition checks\nHTTP integration flow\nSecurity headers and bounded input","textPreview":"Verified now | Core replay tests | Invalid transition checks | HTTP integration flow | Security headers and bounded input","textChars":113,"textLines":5,"bbox":[120,300,500,360]}
+{"kind":"textbox","id":"sh/up43q5w7","slide":7,"text":"Pending evidence\nGemini plain baseline\nGemini hinted baseline\nFinal captured UI screenshot\nOrganizer ruling on pre-build scope","textPreview":"Pending evidence | Gemini plain baseline | Gemini hinted baseline | Final captured UI screenshot | Organizer ruling on pre-build scope","textChars":126,"textLines":5,"bbox":[720,300,500,360]}
+{"kind":"textbox","id":"sh/5gf2pkfu","slide":7,"text":"Build-window demo\nIngest the client note live, with a one-click pre-extracted fallback if the API is unavailable on stage.","textPreview":"Build-window demo | Ingest the client note live, with a one-click pre-extracted fallback if the API is unavailable on stage.","textChars":122,"textLines":2,"bbox":[1320,300,440,360]}
+{"kind":"notes","id":"nt/gnmp4jqx","slide":7,"text":"No baseline metric is included because the API key and fixtures are not yet available."}

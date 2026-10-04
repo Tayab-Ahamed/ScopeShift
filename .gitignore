@@ -1,0 +1,21 @@
+# Node dependencies
+node_modules/
+.ppt-build/node_modules/
+
+# Python cache & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Local databases
+events.db
+*.sqlite
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

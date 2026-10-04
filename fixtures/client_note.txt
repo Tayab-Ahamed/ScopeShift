@@ -1,0 +1,5 @@
+From: Priya Nair (Client, Product Owner)
+To: Delivery team
+Subject: Checkout payment scope
+
+After reviewing the demo, we are changing scope. Checkout shall support Card payments. UPI moves to Phase 2.

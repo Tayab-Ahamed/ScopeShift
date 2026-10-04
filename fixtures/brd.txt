@@ -1,0 +1,10 @@
+Business Requirements Document - Online Store Checkout
+
+1. Purpose
+This document defines requirements for the Online Store checkout flow, v1.0.
+2. Payment Methods
+REQ-PAY-01: Checkout shall support UPI payments only.
+Business rule: UPI is the exclusive payment method for v1.0. No other payment method is in scope.
+
+3. Currency
+REQ-CUR-01: All prices shall be shown and charged in INR.

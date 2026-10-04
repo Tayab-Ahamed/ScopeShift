@@ -1,0 +1,3 @@
+test,runs_ok,errors,correct,outcomes,distinct_requirement_texts,citations_valid,citations_unverifiable_screenshot,citations_invalid
+A,5,0,5,"{""CARD_SETTLED"": 5}",1,5,0,0
+B,5,0,5,"{""FLAGGED_CONFLICT"": 5}",1,5,0,0
