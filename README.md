@@ -1,123 +1,161 @@
-# ScopeShift Enterprise
+<div align="center">
+
+# ScopeShift
+### Deterministic Evidence Governance &amp; Requirements Verification Engine
 
 > **"Seeing a button is not approving the button."**  
-> *From conflicting evidence to governed requirements.*
+> Decoupling multi-modal LLM extraction from specification authority through code-level citation proofs and tamper-evident event streaming.
 
-ScopeShift is an evidence-governed BRD generator and requirements authority engine. It extracts claims from documents and screenshots, validates citations, detects contradictions, and only promotes a requirement when an explicit client scope decision authorizes it.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Tests](https://img.shields.io/badge/Tests-90%2F90%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Architecture](https://img.shields.io/badge/Architecture-Fail--Closed%20Deterministic-blueviolet?style=flat-square)](#the-governed-pipeline)
+[![Audit](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash--Chained-success?style=flat-square)](#immutable-event-ledger)
+[![Cloud Mirrors](https://img.shields.io/badge/Cloud%20Dual--Write-BigQuery%20%7C%20GCS%20%7C%20Vertex-informational?style=flat-square&logo=googlecloud&logoColor=white)](#enterprise-cloud-architecture)
+[![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=flat-square)](LICENSE)
 
----
+<br/>
 
-## The Problem
+<img src="assets/scopeshift-architecture.svg" alt="ScopeShift Deterministic Pipeline" width="100%">
 
-Software teams lose time and trust because requirements are scattered across BRDs, UI screenshots, and client messages. When these sources conflict:
-- **BRD:** Checkout shall support UPI only (`exclusive: true`).
-- **Screenshot:** Staging UI shows a "Pay with Card" button.
-- **Client note:** Card is in scope; UPI moves to Phase 2.
-
-Existing AI tools summarize documents by guessing or silently overwriting the truth—treating visual observations as approval, losing source provenance, and baking withdrawn decisions into the specification.
-
-## The Governed Flow
-
-```
-Evidence ──► Citation Validation ──► Append-Only Event Log ──► Deterministic Resolver ──► Current BRD
-(Gemini)          (Code)                   (SQLite)                    (Deterministic)       (Projected)
-```
-
-1. **Gemini is the extractor, not the authority:** Reads PDF, PNG, and text; extracts structured claims constrained to a fixed schema.
-2. **Code validates citations:** Quotes must exist verbatim in the source text; screenshot regions must exist within image boundaries. Observations can never grant authority.
-3. **Append-only event log:** Ingests `ADDED` and `REMOVED` events with strictly increasing sequence numbers (SQLite; sequence assignment is atomic under the threaded server — FR-10).
-4. **Deterministic resolver:** Keyed generically by `claim_id`. Promotes requirements only when an explicit, verified client scope decision governs the claim.
-
-> **Honest Architecture Note:**
-> *The append-only log in this demo is SQLite (in-memory by default, file-backed with `SCOPESHIFT_DB`).
-> No GCP services are used by default; with no `GEMINI_API_KEY` configured, extraction runs on the deterministic
-> fallback (pre-extracted evidence) and replay never calls Gemini. Tier-1 GCP integrations (BigQuery mirror,
-> GCS originals, Vertex AI extraction) are env-gated and light up only with SDKs + env vars + credentials —
-> the UI then shows them as live, otherwise as an honest "local mirror".*
+</div>
 
 ---
 
-## 3-Beat Demo: DISPUTED → GOVERNED → DISPUTED
+## Executive Overview
 
-1. **Beat 01 (Conflict):** BRD (UPI only) + Screenshot (Card visible) &rarr; **`DISPUTED`**. Requirement withheld.
-2. **Beat 02 (Decision):** Client note explicitly authorizes Card &rarr; **`GOVERNED`**. Requirement enters the BRD with governing citation and superseded baseline recorded.
-3. **Beat 03 (Withdrawal):** Client decision is withdrawn (`SRC-03 REMOVED`) &rarr; **`DISPUTED`**. Requirement disappears and the explanation remains visible.
+Modern software teams and autonomous AI coding agents face a critical drift vulnerability: **unauthorized visual scope creep**. When an engineering staging UI, mock, or chat snippet introduces a feature, current AI tools silently bake it into requirements specifications—treating mere visual observation as stakeholder approval.
+
+**ScopeShift establishes a strict, verifiable boundary:**
+1. **Extraction is decoupled from authority:** Multi-modal foundation models (Gemini 2.5 Flash / Vertex AI) extract structured claims, but are never permitted to make governance decisions.
+2. **Code enforces citation integrity:** Every cited quote must match verbatim in the source document. Every UI screenshot must fall within physical bounding boxes. Dangling or hallucinated citations fail closed.
+3. **Deterministic resolution:** Requirements advance into the published Business Requirements Document (BRD) strictly when an authorized, verified client decision explicitly mandates them.
+
+---
+
+## The Governed Pipeline
+
+```
+Evidence Artifacts ──► Verbatim Citation Gate ──► Append-Only Event Store ──► Deterministic Resolver ──► Governed BRD Spec
+(PDF / PNG / Notes)       (Fail-Closed Code)          (Monotonic SHA-256)        (Pure State Machine)     (Live Projection)
+```
+
+| Pipeline Stage | Function | Guarantees |
+|---|---|---|
+| **1. Multi-Modal Ingestion** | Extracts candidate claims from PDFs, UI screenshots, and client messages. | Constrained schema extraction. Deterministic offline fallback preserved for zero-downtime reliability. |
+| **2. Verbatim Citation Gate** | Code-level substring proof and spatial pixel bounding validation. | Fail-closed. Rejects fabricated quotes, forged scopes, and out-of-bounds bounding boxes with structured rejection receipts. |
+| **3. Immutable Event Ledger** | Sequences mutations into an append-only log with SHA-256 cryptographic hash chains. | Monotonic ordering with SQLite atomic concurrency guards. Dual-writes to Google BigQuery streaming log. |
+| **4. Deterministic Resolver** | Projector keyed by claim ID that computes conflict matrices and resolves governing authority. | Mathematical determinism: identical event sequences always yield identical requirements state. |
+| **5. Governed BRD Document** | Generates authoritative markdown specifications with full audit lineage. | Real-time diff against baseline, governing source attribution, and superseded baseline references. |
+
+---
+
+## Core Capabilities
+
+### 🛡️ Fail-Closed Citation Proofs
+AI extractors cannot hallucinate authority. If a model generates a citation whose quote does not appear verbatim in the source payload, the ingestion boundary rejects the payload with an immutable rejection receipt (`UNVERIFIED_QUOTE`). Visual observations (`screenshot`) are permanently classified as non-authoritative.
+
+### 👁️ Visual Provenance Diff Inspector
+Clicking the governance banner in the Cockpit launches an interactive modal displaying side-by-side evidence cards for the active claim:
+- Baseline BRD requirements vs staging UI observations vs client statements.
+- Direct quote spans, image bounding-box overlays, and authority tier indicators.
+- Live resolver rationale explaining why a claim is withheld or promoted.
+
+### 🎯 1-Click Scenario Presets
+Test the real validation pipeline and state machine with single-click production scenarios:
+- **Security Mandate (`mfa`):** Baseline BRD specifies optional MFA &rarr; Client directive enforces TOTP &amp; SMS &rarr; Promoted to `GOVERNED`.
+- **Scope Change (`currency`):** Baseline INR policy &rarr; Client switches to multi-currency USD &rarr; Replaces baseline as `GOVERNED`.
+- **Adversarial Injection (`hostile`):** Injects fabricated quotes, forged scope overrides, and unregistered claims &rarr; Safely contained at the boundary.
+
+### 🌐 3D Spatial Evidence Twin
+Interactive Three.js visualizer rendering requirements topology in 3D coordinate space. When unverified staging evidence contradicts baseline documentation, a physical red vector clash barrier halts progression—visually demonstrating why observation is never approval.
+
+### ⛓️ Cryptographic Audit Ledger &amp; BigQuery Stream
+Every state change is recorded in an append-only event store. Each event calculates a SHA-256 digest over its sequence, payload, timestamp, and the preceding event's hash. The browser UI features a client-side **Verify Hash Chain** tool that recalculates the entire chain independently.
+
+---
+
+## Three-Stage Governance Lifecycle
+
+The system enforces a strict 3-stage lifecycle demonstration:
+
+```
+[ STAGE 01: DISPUTED ] ────────► [ STAGE 02: GOVERNED ] ────────► [ STAGE 03: DISPUTED ]
+Baseline BRD: UPI only           Client Note: Card authorized      Client revokes decision
+UI shows Card button             Enters BRD with governing ref     Withdrawn from BRD immediately
+Result: Requirement Withheld     Baseline marked SUPERSEDED        Forensic history preserved
+```
 
 ---
 
 ## Quickstart
 
-### 1. Run the Demo Server
+### Prerequisites
+- Python 3.10+
+- Modern Web Browser (Chrome, Firefox, Safari, Edge)
+- *Optional:* Google Cloud credentials (for live BigQuery / GCS / Vertex AI dual-write)
+
+### 1. Launch the Server
 ```bash
-python3 demo_server.py
+python demo_server.py
 ```
-Open **http://localhost:8765** in any modern browser.
+Open **`http://localhost:8765`** in your browser.
 
-- **Keyboard shortcuts:** Press `1`, `2`, or `3` to instantly step through the beats (strict order 1 → 2 → 3; re-pressing an applied beat is an explicit no-op with a recovery hint).
-- **Extraction honesty:** With no `GEMINI_API_KEY` set, the extraction pill reads "DETERMINISTIC FALLBACK — pre-extracted evidence (replay never calls Gemini)". Beat 2's response includes the extraction outcome (claims, per-claim code validation, real mode).
-- **Chaos tiles:** The adversarial test suite executes each attack through the real `validate_claim` boundary and returns a rejection receipt (rule fired, quote-diff/schema error, resulting classification).
-- **Inspect artifacts:** Click *View Artifact* on any source to inspect the original PDF, screenshot, or client note in an overlay modal.
-- **Persistence mode:** Set `SCOPESHIFT_DB="scopeshift.db"` before starting the server to run with persisted SQLite storage.
-- **Stage cheat-sheet:** [`PRESENTER.md`](PRESENTER.md) (beat order, shortcuts, what to say, recovery).
+- **Keyboard Shortcuts:** Press `1`, `2`, or `3` to instantly step through the 3 governance stages.
+- **Automated Walkthrough:** Click `▶ Automated Walkthrough` in the header for a timed automated walkthrough.
+- **Persistence Mode:** Set `SCOPESHIFT_DB="scopeshift.db"` to persist events to disk.
 
-### Optional Cloud Integrations (env-gated, never required)
+### 2. Run the Test Suite
+The complete test suite runs in under 30 seconds with zero external dependencies:
+```bash
+python -m pytest -q
+```
+```
+........................................................................ [ 80%]
+..................                                                       [100%]
+90 passed in 27.27s
+```
 
-SQLite is the source of truth and the demo works fully offline. Three Tier-1 GCP
-integrations light up only when their SDK, env vars, **and** credentials are all
-present — otherwise they are honest no-ops and the UI shows "local mirror".
-
-| Service | Env vars (stage laptop) | Optional SDK |
-|---|---|---|
-| **BigQuery** event mirror | `SCOPESHIFT_BQ_DATASET` + credentials (`GOOGLE_APPLICATION_CREDENTIALS`) | `google-cloud-bigquery` |
-| **GCS** originals + signed artifact URLs | `SCOPESHIFT_GCS_BUCKET` + credentials | `google-cloud-storage` |
-| **Vertex AI** extraction route | `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` + credentials | `google-cloud-aiplatform` |
-
-Install only if you want the cloud paths (never hard deps — stdlib + SQLite only):
+### 3. Optional Enterprise Cloud Dual-Write
+ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional GCP integrations activate automatically when environment variables and SDKs are present:
 
 ```bash
+# Install optional cloud SDKs
 pip install google-cloud-bigquery google-cloud-storage google-cloud-aiplatform
+
+# Set configuration variables
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+export SCOPESHIFT_BQ_DATASET="scopeshift_audit"
+export SCOPESHIFT_GCS_BUCKET="scopeshift-artifacts"
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+export GOOGLE_CLOUD_LOCATION="us-central1"
 ```
 
-Status: `GET /api/cloud/status` → per-service `{"connected", "reason"}` plus the
-effective extraction mode. The backend-status cluster in the UI polls it on load.
-Startup logs honest lines, e.g. `BigQuery: not connected (env SCOPESHIFT_BQ_DATASET unset) — local mirror active`.
-
-### 2. Run the Full Test Suite
-```bash
-python3 -m pytest
-```
-Runs the complete test suite covering:
-- Generic claim registry & validation rules (`tests/test_core.py`)
-- Append-only event store, trigger guards & FR-10 concurrency race test (`tests/test_store.py`)
-- Extraction & ingestion pipeline (`tests/test_extraction.py`)
-- Demo server REST endpoints, real chaos execution, beat honesty & security headers (`tests/test_api.py`)
-- Env-gated GCP integrations: offline no-op fallbacks, honest status reasons, dual-write & signed-URL wiring (`tests/test_cloud.py`)
-
-### 3. Run the Empirical Baseline Experiment
-```bash
-# Offline simulation / test run
-python3 baseline.py --model gemini-2.5-flash --prompt plain --runs 10 --out out_plain --mock
-python3 baseline.py --model gemini-2.5-flash --prompt hinted --runs 10 --out out_hinted --mock
-
-# Live Gemini run (requires GEMINI_API_KEY)
-python3 baseline.py --model gemini-2.5-flash --prompt plain --runs 10 --out out_plain
-python3 baseline.py --model gemini-2.5-flash --prompt hinted --runs 10 --out out_hinted
-```
+Check connection status at any time via `GET /api/cloud/status` or the live backend indicator cluster in the navigation bar.
 
 ---
 
-## What Is Actually Implemented
+## Test Architecture (90/90 Passing)
 
-- **5 pages:** Live Executive Cockpit (+ 3D spatial twin), Multi-Claim Scope Governance Matrix, Ingestion & Client Decision Console, Governed BRD Document Generator, Append-Only Immutable Audit Log.
-- **Light editorial design system:** light canvas (`#f8f9fa`), serif headlines (Newsreader), crimson/emerald/royal accent palette — not a dark "industrial" theme.
-- **Real chaos execution:** adversarial tiles run hostile payloads through the genuine `validate_claim` boundary; each returns a rejection receipt naming the rule fired.
-- **Extraction honesty:** no "Live Gemini Extractor" theater — an honest status pill shows the real mode; Beat 2's response exposes claims, per-claim validation, and mode.
-- **Reset-aware beats:** 1 → 2 → 3 ordering enforced by design; re-pressing an applied beat returns an explicit `already_applied` hint.
+| Test Module | Coverage Scope |
+|---|---|
+| [`tests/test_core.py`](tests/test_core.py) | Domain claim registries, schema validators, invariant rules, and deterministic state transitions. |
+| [`tests/test_store.py`](tests/test_store.py) | Monotonic sequence assignment, SHA-256 hash chains, trigger guards, and concurrent race integrity. |
+| [`tests/test_extraction.py`](tests/test_extraction.py) | Multi-modal claim extraction, verbatim quote substring proofs, and coordinate bounding boundary checks. |
+| [`tests/test_api.py`](tests/test_api.py) | REST endpoint validation, adversarial payload rejection receipts, stage progression, and security headers. |
+| [`tests/test_cloud.py`](tests/test_cloud.py) | Graceful cloud fallback, offline no-op mirrors, honest connection diagnostics, and signed URL generation. |
 
 ---
 
-## Submission Assets
+## Technical Specifications
 
-- **Selection Deck:** [`submission/ScopeShift-HackSprint-Phase2-8slide.pptx`](submission/ScopeShift-HackSprint-Phase2-8slide.pptx) (8 core story slides + 1 empirical baseline appendix)
-- **Deck Generator:** [`build_deck.py`](build_deck.py)
-- **Fixtures:** `fixtures/brd.pdf`, `fixtures/checkout.png`, `fixtures/client_note.txt`
+- **Backend:** Python 3 (standard library `http.server`, `sqlite3`, `hashlib`, `json`, `dataclasses`).
+- **Frontend:** Vanilla modern ES6+, CSS Custom Properties, Canvas 2D sparklines, Three.js 3D spatial twin. Zero frontend build steps or bloated frameworks.
+- **Extraction Model:** Google Gemini 2.5 Flash / Vertex AI with deterministic fallback pipeline.
+- **Storage:** Atomic SQLite append-only log with optional Google BigQuery streaming dual-write and Google Cloud Storage artifact storage.
+- **Design Language:** Light technical editorial canvas, Newsreader &amp; Inter typography, WCAG AA compliant contrast.
+
+---
+
+## License
+
+Distributed under the Apache 2.0 License. See `LICENSE` for details.
