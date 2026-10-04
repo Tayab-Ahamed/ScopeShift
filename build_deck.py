@@ -28,7 +28,7 @@ def new_slide(n, title=None, kicker=None, is_appendix=False):
         text(s, kicker.upper(), 0.7, 0.45, 8, 0.4, 13, MUTED, bold=True)
     if title:
         text(s, title, 0.7, 0.8, 11.9, 1.0, 34, TEXT, bold=True)
-    footer_text = "ScopeShift  |  PS/P42  |  Appendix" if is_appendix else f"ScopeShift  |  PS/P42  |  {n}/8"
+    footer_text = "ScopeShift  |  Enterprise Edition  |  Appendix" if is_appendix else f"ScopeShift  |  Enterprise Edition  |  {n}/8"
     text(s, footer_text, 0.7, 7.0, 6, 0.3, 11, MUTED)
     return s
 
@@ -98,7 +98,7 @@ def flow(s, steps, y, h=1.0, color=BLUE, size=15, x0=0.7, total=11.9, gap=0.5, c
 
 # 1 - Title / hook
 s = new_slide(1)
-text(s, "PS/P42  |  EVIDENCE-GOVERNED BRD GENERATOR", 0.7, 1.2, 10, 0.4, 14, AMBER, bold=True)
+text(s, "ENTERPRISE  |  EVIDENCE-GOVERNED BRD GENERATOR", 0.7, 1.2, 10, 0.4, 14, AMBER, bold=True)
 text(s, "ScopeShift", 0.7, 1.7, 11, 1.6, 80, TEXT, bold=True)
 text(s, "From conflicting evidence to governed requirements.", 0.7, 3.4, 11.5, 0.7, 28, MUTED)
 box(s, 0.7, 4.8, 11.9, 1.3, fill=PANEL, line=AMBER, lw=2)
@@ -160,23 +160,23 @@ for i, (b, st, c, l1, l2) in enumerate(beats):
     text(s, b, x + 0.25, 2.15, 3.3, 0.4, 14, MUTED, bold=True)
     text(s, st, x + 0.25, 2.65, 3.3, 0.9, 38, c, bold=True)
     text(s, [l1, l2], x + 0.25, 3.85, 3.3, 2.3, 18, TEXT)
-text(s, "Live Interactive Cockpit: 3D Spatial Topology Matrix (Three.js) \u2022 Time-Travel Scrubber \u2022 Deep Citation Inspector",
-     0.7, 6.5, 11.9, 0.4, 14, BLUE, bold=True)
+text(s, "Live Interactive Cockpit: 3D Spatial Topology Matrix (Three.js) \u2022 Live SSE Evidence Feed \u2022 Time-Travel Scrubber \u2022 Ask-the-Evidence Q&A \u2022 Contradiction Heatmap \u2022 Automated Simulation Walkthrough",
+     0.7, 6.5, 11.9, 0.4, 13, BLUE, bold=True)
 
 # 6 - Technical
 s = new_slide(6, "Four blocks. One accountable pipeline.", "How it works technically")
 blocks = [
-    ("Gemini structured extraction", "Claims constrained to an enum of claim IDs, with quote and proposed scope change.", BLUE),
-    ("Code-level quote and schema validation", "Quotes must exist in the source text. Hallucinated claims are rejected.", BLUE),
-    ("BigQuery append-only event log", "ADDED and REMOVED events, ordered by sequence. Insert-only by application design.", GREEN),
-    ("Generic deterministic resolver", "resolve(claim_id, active_evidence). Keyed by claim, not by payment methods.", GREEN),
+    ("Gemini structured extraction (Vertex AI route)", "Claims constrained to an enum of claim IDs, with quote and proposed scope change. Vertex AI endpoint when GOOGLE_CLOUD_PROJECT is set; deterministic fallback offline.", BLUE),
+    ("Code-level quote and schema validation", "Quotes must exist in the source text. Screenshots can never govern. Hallucinated claims are rejected; chaos attacks are executed, not scripted.", BLUE),
+    ("BigQuery append-only event log (env-gated)", "ADDED and REMOVED events streamed to BigQuery when credentials exist; SQLite is the persisted local mirror. Insert-only by application design.", GREEN),
+    ("Live SSE feed + deterministic resolver", "Evidence streams in real time; resolve(claim_id, active_evidence) recomputes live. Citation integrity is fail-closed: dangling citations refuse to serve.", GREEN),
 ]
 for i, (h, b, c) in enumerate(blocks):
     x = 0.7 + (i % 2) * 6.05
     y = 1.9 + (i // 2) * 2.0
     card(s, x, y, 5.85, 1.85, h, b, accent=c, head_size=19, body_size=15)
 box(s, 0.7, 6.0, 11.9, 0.8, fill=PANEL, line=AMBER, lw=1.5)
-text(s, "BigQuery is the persisted append-only log. The demo reads through an in-memory mirror of it.",
+text(s, "Cloud integrations are env-gated: the demo runs fully offline on the local mirror; with GCP credentials it streams to BigQuery / Cloud Storage / Vertex AI.",
      0.8, 6.0, 11.7, 0.8, 18, AMBER, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
 # 7 - Differentiation table
@@ -206,31 +206,34 @@ for r, (a, b) in enumerate(rows):
         run.font.color.rgb = rgb(MUTED if (c == 0 and r) else (GREEN if (c == 1 and r) else TEXT))
 
 # 8 - Build plan
-s = new_slide(8, "A 24-hour build, scoped to one unforgettable scenario.", "Build plan and impact")
-steps = ["Ingest PDF, screenshot, client note", "Extract structured evidence", "Validate citations",
-         "Run resolver", "Demonstrate three state transitions", "Package replayable demo + fallback"]
+s = new_slide(8, "Built, tested, and demo-ready.", "Build status")
+steps = ["Multi-claim extraction + validation", "BigQuery/GCS/Vertex env-gated integrations", "Live SSE evidence feed",
+         "Deterministic resolver + fail-closed citations", "Ask-the-evidence + heatmap + 3D twin", "90 automated tests green"]
 for i, st in enumerate(steps):
     x = 0.7 + (i % 3) * 4.05
     y = 1.9 + (i // 3) * 1.55
     box(s, x, y, 3.8, 1.3)
-    text(s, str(i + 1), x + 0.2, y, 0.6, 1.3, 32, GREEN, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+    text(s, "\u2713", x + 0.2, y, 0.6, 1.3, 32, GREEN, bold=True, anchor=MSO_ANCHOR.MIDDLE)
     text(s, st, x + 0.85, y, 2.85, 1.3, 17, TEXT, bold=True, anchor=MSO_ANCHOR.MIDDLE)
 box(s, 0.7, 5.3, 11.9, 1.4, fill=PANEL, line=GREEN, lw=2)
 text(s, "ScopeShift turns AI from a requirements guesser into an accountable requirements system.",
      0.9, 5.3, 11.5, 1.4, 26, TEXT, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
-# 9 - Appendix: Measured baseline experiment
-s = new_slide(9, "Empirical validation: Plain Gemini vs Hinted vs ScopeShift", "Appendix: Baseline", is_appendix=True)
-text(s, "Controlled experiment: 10 independent runs per condition on checkout fixtures (API default temp).",
-     0.7, 1.6, 11.9, 0.4, 15, MUTED)
+# 9 - Appendix: SIMULATED baseline experiment (honest labeling)
+s = new_slide(9, "Baseline: SIMULATED model stand-in \u2014 live Gemini run pending", "Appendix: Baseline", is_appendix=True)
+box(s, 0.7, 1.55, 3.4, 0.55, fill=PANEL, line=RED, lw=2)
+text(s, "\u26a0 SIMULATED \u2014 NOT MEASURED ON GEMINI", 0.8, 1.55, 3.2, 0.55, 15, RED, bold=True,
+     align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
+text(s, "mock-gemini-preview stand-in \u2022 5 runs per condition \u2022 API-default temperature \u2022 source: baseline_out/*/summary.md (unedited). Live 10-run Gemini baseline runs on the stage laptop with GEMINI_API_KEY.",
+     4.4, 1.55, 8.2, 0.6, 14, MUTED)
 
 base_rows = [
-    ("Condition", "Test A (Note Present)", "Test B (Note Removed / Screenshot Only)", "Citations Valid"),
-    ("Plain Gemini (No Hints)", "10/10 Card settled", "0/10 Correct (10/10 settled Card from UI button!)", "0% (screenshot unverifiable)"),
-    ("Hinted Prompt", "10/10 Card settled", "Flaky / Drift across runs", "Prompt-dependent"),
-    ("ScopeShift (Ours)", "100% GOVERNED", "100% DISPUTED (Requirement withheld)", "100% Code-verified"),
+    ("Condition", "Test A (note present)", "Test B (screenshot only)", "Citations"),
+    ("Plain (simulated)", "5/5 Card settled", "0/5 correct \u2014 5/5 settled Card from the UI button", "0 valid / 5 unverifiable"),
+    ("Hinted (simulated)", "5/5 Card settled", "5/5 conflict flagged", "5 valid / 0 unverifiable"),
+    ("ScopeShift (deterministic)", "GOVERNED on every replay", "DISPUTED on every replay \u2014 withheld", "Code-verified \u2022 fail-closed"),
 ]
-t9 = s.shapes.add_table(len(base_rows), 4, Inches(0.7), Inches(2.1), Inches(11.9), Inches(3.2)).table
+t9 = s.shapes.add_table(len(base_rows), 4, Inches(0.7), Inches(2.3), Inches(11.9), Inches(3.0)).table
 t9.columns[0].width = Inches(3.2)
 t9.columns[1].width = Inches(2.6)
 t9.columns[2].width = Inches(3.8)
@@ -250,7 +253,7 @@ for r, row in enumerate(base_rows):
         run.font.color.rgb = rgb(TEXT if r == 0 else (GREEN if r == 3 else (AMBER if (c == 2 and r == 1) else MUTED)))
 
 box(s, 0.7, 5.6, 11.9, 1.1, fill=PANEL, line=BLUE, lw=1.5)
-text(s, "Takeaway: In Test B, unassisted LLMs treat the visible button as authority 100% of the time.\nScopeShift separates extraction from authority, eliminating false positive requirements.",
+text(s, "Takeaway: even simulated, the unhinted model treats the visible button as authority 5/5 in Test B.\nScopeShift withholds the requirement deterministically \u2014 proven by 90 automated tests, not by model luck.",
      0.9, 5.6, 11.5, 1.1, 16, TEXT, bold=True, align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
 
 out = "submission/ScopeShift-HackSprint-Phase2-8slide.pptx"

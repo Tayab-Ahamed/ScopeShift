@@ -64,17 +64,61 @@ def test_demo_beats_flow(test_server):
     assert status == 200
     assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "DISPUTED"
 
-    # Beat 2 -> GOVERNED
+    # Beat 2 -> GOVERNED, with the honest extraction outcome visible in the response
     status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 2, "use_live_ai": False})
     assert status == 200
     assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "GOVERNED"
-    assert body["extraction"]["mode"] == "fallback"
+    ext = body["extraction"]
+    assert ext["mode"] == "deterministic-fallback"  # no GEMINI_API_KEY: never claim "live"
+    assert ext["claims"], "extraction claims must be visible, not discarded"
+    assert ext["claims"][0]["claim_id"] == "checkout.payment_methods"
+    assert ext["validation"], "per-claim code validation must be visible"
+    v0 = ext["validation"][0]
+    assert v0["claim_id"] == "checkout.payment_methods"
+    assert v0["quote_verified"] is True
+    assert v0["proposed_scope_change"] is True
+    assert v0["error"] is None
+    assert "replay never calls Gemini" in ext["note"]
 
     # Beat 3 -> DISPUTED with withdrawal explanation
     status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 3})
     assert status == 200
     assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "DISPUTED"
     assert body["state"]["resolutions"]["checkout.payment_methods"]["disappeared"] is not None
+
+
+def test_demo_beats_are_reset_aware(test_server):
+    # Re-pressing Beat 3 is an explicit honest no-op, not a silent one
+    status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 3})
+    assert status == 200
+    assert body.get("already_applied") is True
+    assert "press 1 to re-seed" in body.get("hint", "")
+
+    # Beat 1 always re-seeds, then Beat 2 applies cleanly
+    status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 1})
+    assert status == 200
+    assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "DISPUTED"
+
+    status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 2})
+    assert status == 200
+    assert "already_applied" not in body
+    assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "GOVERNED"
+
+    # Re-pressing Beat 2 now reports already_applied with a recovery hint
+    status, body, _ = req(f"{test_server}/api/demo/beat", "POST", {"beat": 2})
+    assert status == 200
+    assert body.get("already_applied") is True
+    assert "press 1 to re-seed" in body.get("hint", "")
+    assert body["state"]["resolutions"]["checkout.payment_methods"]["state"] == "GOVERNED"
+
+
+def test_state_reports_citation_warnings(test_server):
+    # FR-8/FR-18: the served BRD projection flags citation violations
+    req(f"{test_server}/api/demo/beat", "POST", {"beat": 2})
+    status, body, _ = req(f"{test_server}/api/state")
+    assert status == 200
+    assert "citation_warnings" in body
+    assert body["citation_warnings"] == []  # clean in the normal flow
 
 
 def test_markdown_export(test_server):
@@ -106,10 +150,45 @@ def test_time_travel_scrubber(test_server):
 
 
 def test_chaos_adversarial_testing(test_server):
+    # Every chaos test must execute the REAL validate_claim boundary and return a genuine
+    # rejection receipt — not a canned string. Nothing may reach the event log.
+    req(f"{test_server}/api/demo/beat", "POST", {"beat": 2})
+
+    # TEST 1: forged screenshot claiming a scope change
     status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "forged_screenshot"})
     assert status == 200
     assert body["blocked"] is True
-    assert "NEVER grant authority" in body["explanation"]
+    assert body["payload"]["claimed_proposed_scope_change"] is True
+    assert body["validated"]["proposed_scope_change"] is False, \
+        "screenshots can NEVER grant authority: the boundary must force it to False"
+    assert "proposed_scope_change" in body["rule_fired"]
+    assert "observation" in body["classification"].lower()
+    assert "NEVER" in body["explanation"]
+
+    # TEST 2: vague note with a quote that fails verification
+    status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "unverified_note"})
+    assert status == 200
+    assert body["blocked"] is True
+    qc = body["quote_check"]
+    assert qc["found_in_source"] is False
+    assert qc["quote_verified"] is False
+    assert "quote verification" in body["rule_fired"]
+    assert "OBSERVATION" in body["classification"]
+
+    # TEST 3: hallucinated claim_id outside the frozen schema
+    status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "rogue_currency"})
+    assert status == 200
+    assert body["blocked"] is True
+    assert body["payload"]["submitted_claim_id"] == "checkout.bitcoin"
+    assert "claim_id outside schema" in body["schema_error"]
+    assert "checkout.bitcoin" in body["schema_error"]
+    assert "4 registered claim ids" in body["rule_fired"]
+
+    # Unknown chaos type is safely intercepted
+    status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "whatever"})
+    assert status == 200
+    assert body["blocked"] is True
+    assert body["rule_fired"] == "unknown chaos type"
 
 
 def test_invalid_event_transition(test_server):

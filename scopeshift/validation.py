@@ -76,14 +76,25 @@ def validate_claim(raw, source_type: str, *, text: str | None = None, image_size
             "proposed_scope_change": scope, "quote_verified": verified, "region": region}
 
 
-def validate_citations(resolutions, active_evidence) -> None:
-    """FR-8/FR-18: every citation of a requirement in the current BRD must reference active evidence."""
+def citation_warnings(resolutions, active_evidence) -> list[str]:
+    """FR-8/FR-18 (non-raising form): collect every citation of a requirement in the current BRD
+    that does not reference an existing active evidence record. Empty list = clean."""
     active_ids = {e.source_id for e in active_evidence if e.active}
+    warnings: list[str] = []
     for res in resolutions:
         if not res.in_brd:
             continue
         if not res.citations:
-            raise ValidationError(f"{res.claim_id}: requirement has no citations")
+            warnings.append(f"{res.claim_id}: requirement has no citations")
+            continue
         for c in res.citations:
             if c.get("source_id") not in active_ids:
-                raise ValidationError(f"{res.claim_id}: citation {c.get('source_id')!r} is not active evidence")
+                warnings.append(f"{res.claim_id}: citation {c.get('source_id')!r} is not active evidence")
+    return warnings
+
+
+def validate_citations(resolutions, active_evidence) -> None:
+    """FR-8/FR-18: every citation of a requirement in the current BRD must reference active evidence."""
+    warnings = citation_warnings(resolutions, active_evidence)
+    if warnings:
+        raise ValidationError(warnings[0])

@@ -1,16 +1,15 @@
 # Implementation Plan: ScopeShift Production System
 
 ## Overview
-Transform ScopeShift from a fixed 3-beat stage demo into a full-scale, end-to-end production evidence-governed requirements platform satisfying Problem Statement PS/P42. Redesign the entire UI/UX with an out-of-the-box Tactile Swiss-Industrial High-End Precision Engineering palette, interactive 3D spatial matrix, live multi-file & client-note ingestion, multi-claim governance matrix, interactive scope authority console, and live document diff/annotation inspector.
+Transform ScopeShift from a fixed 3-beat stage demo into a full-scale, end-to-end production evidence-governed requirements platform satisfying Problem Statement PS/P42. Redesign the entire UI/UX with a light editorial design system, interactive 3D spatial matrix, live multi-file & client-note ingestion, multi-claim governance matrix, interactive scope authority console, and live document diff/annotation inspector.
 
-## Out-of-the-Box Visual Identity (Anti-Slop)
-- **Aesthetic:** Tactile High-Precision Industrial Governance Cockpit.
-- **Background:** Deep Matte Carbon / Obsidian (`#0b0d11`, linear grid lines `#151922`).
-- **Panels:** Slate-Graphite (`#131720`, border `#232a3b`, active `#1a202c`) with razor-sharp micro-borders and technical corner tick marks.
-- **Tension & Conflict Accent:** International Safety Vermilion (`#ff3b00` / `#ff5500`) for contradictions, disputes, and the winning hook.
-- **Governed & Authority Accent:** Luminous Acid Emerald (`#00f076` / `#05df72`) for verified decisions and approved requirements.
-- **Provenance Accent:** Technical Cobalt (`#2b59ff` / `#4d74ff`) for baselines, schemas, and evidence linkages.
-- **Typography:** Architectural typography with clean grotesque headers and JetBrains Mono for exact telemetry.
+## Visual Identity (as actually implemented)
+- **Aesthetic:** Light Editorial Governance Cockpit — light canvas (`#f8f9fa`), serif headlines (Newsreader/Playfair Display), JetBrains Mono for exact telemetry.
+- **Panels:** White surfaces (`#ffffff`), subtle borders (`#e2e8f0`), soft shadows.
+- **Tension & Conflict Accent:** Crimson (`#e11d48`) for contradictions and disputes.
+- **Governed & Authority Accent:** Emerald (`#059669`) for verified decisions and approved requirements.
+- **Provenance Accent:** Royal blue (`#2563eb`) for baselines, schemas, and evidence linkages.
+- **Caution Accent:** Amber (`#d97706`) for honest fallback-mode indicators.
 
 ## System Architecture & Capabilities
 1. **Multi-Claim Engine (`scopeshift/claims.py`):**
@@ -35,7 +34,16 @@ Transform ScopeShift from a fixed 3-beat stage demo into a full-scale, end-to-en
 ## Task Breakdown
 - [ ] Task 1: Expand Claim Registry and Multi-Claim Ingestion Engine
 - [ ] Task 2: Backend API Endpoints for Custom Ingestion, Authoring Decisions & Export
-- [ ] Task 3: Out-of-the-Box Swiss-Industrial Design System & CSS Overhaul
+- [ ] Task 3: Light Editorial Design System & CSS Overhaul
 - [ ] Task 4: Interactive 3D Spatial Knowledge Graph & Laser Vectors
 - [ ] Task 5: Interactive Multi-Claim UI Modules, Ingestion Studio & BRD Generator
-- [ ] Task 6: End-to-End Verification, Automated Tests & Visual Validation
+- [ ] Task 6: End-to-End Verification & Automated Tests
+- [x] Task 7: Tier-0 Credibility Fixes (Stream A)
+  - Real chaos execution through `validate_claim` with genuine rejection receipts
+  - Beat-2 extraction honesty (claims + per-claim validation + real mode in the response; honest status pill instead of the "Live Gemini Extractor" toggle)
+  - Extraction prompt enum lists all 4 registry claim_ids
+  - FR-8/FR-18 `citation_warnings` wired into the snapshot path
+  - Dead legacy removed (`scopeshift_core.py`, `event_store.py`, `test_scopeshift_core.py`)
+  - FR-10 atomic sequence assignment (threading.Lock) + concurrent regression test
+  - Reset-aware beats (1 → 2 → 3; explicit `already_applied` no-ops) + `PRESENTER.md`
+  - Docs truth pass (this file, `tasks/todo.md`, `README.md`)

@@ -108,3 +108,37 @@ def test_store_persists_to_file(tmp_path, sample_evidence):
     assert snap["resolutions"][PAY]["state"] == "DISPUTED"
     assert len(snap["events"]) == 2
     store2.close()
+
+
+def test_concurrent_add_event_assigns_unique_monotonic_sequences():
+    """FR-10: on the threaded server, read-MAX-then-INSERT must be atomic so concurrent
+    add_event calls never collide on event_sequence."""
+    import threading
+
+    n = 16
+    evidence = [
+        Evidence(f"SRC-{i:02d}", "brd", PAY, {"methods": ["UPI"], "exclusive": True},
+                 f"baseline {i}", quote_verified=True, event_sequence=i)
+        for i in range(1, n + 1)
+    ]
+    store = EventStore(":memory:")
+    store.seed(evidence)
+
+    results, errors = [], []
+
+    def worker(sid):
+        try:
+            results.append(store.add_event(sid, "ADDED"))
+        except Exception as exc:  # noqa: BLE001 - test must surface any failure
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(f"SRC-{i:02d}",)) for i in range(1, n + 1)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"concurrent add_event raised: {errors!r}"
+    seqs = sorted(e.event_sequence for e in results)
+    assert seqs == list(range(1, n + 1)), f"sequences not unique+monotonic: {seqs}"
+    store.close()

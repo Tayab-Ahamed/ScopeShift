@@ -1,4 +1,4 @@
-// ScopeShift Production Engine (PS/P42 Commudle Hack Sprint)
+// ScopeShift Production Engine
 // Modern Light Editorial Design System, Multi-Page Routing, Mobile Responsiveness & 3D Spatial Twin
 
 (function () {
@@ -9,6 +9,7 @@
   let currentBeat = 1;
   let activePageId = 'page-cockpit';
   let diffModeActive = false;
+  let prevHeroState = null; // Stream E: hero claim state seen on the last render
 
   // UI Element Handles
   const stateEl = document.querySelector('#state');
@@ -17,7 +18,8 @@
   const evidenceEl = document.querySelector('#evidence-ledger');
   const brdEl = document.querySelector('#brd');
   const eventsEl = document.querySelector('#events');
-  const aiToggle = document.querySelector('#ai-toggle');
+  const extractionModePill = document.querySelector('#extraction-mode-pill');
+  const extractionModeText = document.querySelector('#extraction-mode-text');
   const latencyBadge = document.querySelector('#extraction-latency');
   const mirrorEl = document.querySelector('#mirror-note');
 
@@ -67,6 +69,25 @@
   const toastMessage = document.querySelector('#toast-message');
   const toastClose = document.querySelector('#toast-close');
 
+  // Stream E: keyboard shortcut help overlay
+  const helpOverlay = document.querySelector('#help-overlay');
+  const helpClose = document.querySelector('#help-close');
+
+  function toggleHelp(show) {
+    if (!helpOverlay) return;
+    const willShow = typeof show === 'boolean' ? show : helpOverlay.style.display !== 'flex';
+    helpOverlay.style.display = willShow ? 'flex' : 'none';
+  }
+
+  function closeHelp() {
+    if (helpOverlay) helpOverlay.style.display = 'none';
+  }
+
+  helpClose?.addEventListener('click', closeHelp);
+  helpOverlay?.addEventListener('click', (e) => {
+    if (e.target === helpOverlay) closeHelp(); // backdrop click
+  });
+
   // ==========================================================================
   // 1. Interactive 3D Spatial Requirements Twin Engine (Three.js Light Theme)
   // ==========================================================================
@@ -76,6 +97,7 @@
   let clashBeam, clashBarrier, authBeam;
   let isDragging = false, prevMouseX = 0, prevMouseY = 0;
   let targetRotationX = 0.22, targetRotationY = -0.28;
+  let twinAnim = { clash: false, beam: false }; // Stream D: driven by real claim states
   const raycaster = new THREE.Raycaster();
   const mouseVec = new THREE.Vector2();
 
@@ -94,7 +116,15 @@
     camera.position.set(0, 6.5, 15);
     camera.lookAt(0, 0, 0);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = null;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch (err) {
+      // Stream D: defensive — a WebGL failure must never break the page.
+      console.error('3D twin: WebGL unavailable, hiding viewport (page unaffected):', err);
+      container.innerHTML = '<p class="canvas-fallback">3D spatial twin unavailable (WebGL failed to initialize). The evidence ledger below is unaffected.</p>';
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -301,6 +331,7 @@
 
     // Click on 3D Node (Raycaster)
     container.addEventListener('click', (e) => {
+      if (!renderer) return; // twin failed to init — nothing to click
       const rect = renderer.domElement.getBoundingClientRect();
       mouseVec.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouseVec.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -345,10 +376,52 @@
       gyroCore.rotation.y += 0.009;
     }
 
+    // Stream D: data-driven pulse — each node glows with its source's real
+    // claim state (set by window.ScopeShiftTwin.update), and the clash
+    // barrier breathes while any dispute is live.
+    const t = performance.now() / 1000;
+    [nodeBRD, nodeScreenshot, nodeNote].forEach(n => {
+      if (!n || !n.material || !n.material.emissive) return;
+      const st = n.userData && n.userData.claimState;
+      n.material.emissiveIntensity = (st === 'DISPUTED' || st === 'GOVERNED')
+        ? 0.45 + 0.35 * Math.sin(t * 4)
+        : 0.12;
+    });
+    if (twinAnim.clash && clashBarrier) {
+      clashBarrier.material.opacity = 0.22 + 0.14 * Math.sin(t * 3.2);
+    }
+
     renderer.render(scene, camera);
   }
 
-  function update3DTopology(stateName) {
+  // Stream D: data-driven 3D twin. Per-node pulse colors come from the real
+  // claim state of each node's source (red DISPUTED / emerald GOVERNED /
+  // cobalt CONSISTENT); the clash barrier lives while ANY claim is disputed
+  // and the emerald authority beam while ANY claim is governed. Called from
+  // the normal render path — never throws, so the page keeps working if the
+  // twin failed to initialize.
+  window.ScopeShiftTwin = {
+    update(snapshot) {
+      try {
+        if (!snapshot || !gyroCore) return;
+        const res = snapshot.resolutions || {};
+        const claimBySource = {};
+        (snapshot.sources || []).forEach(s => { claimBySource[s.id] = s.claim_id; });
+        const COLOR = { DISPUTED: 0xe11d48, GOVERNED: 0x059669, CONSISTENT: 0x2563eb };
+        [nodeBRD, nodeScreenshot, nodeNote].forEach(n => {
+          if (!n || !n.userData || !n.userData.id || !n.material || !n.material.emissive) return;
+          const cid = claimBySource[n.userData.id];
+          const st = (cid && res[cid]) ? res[cid].state : null;
+          n.userData.claimState = st || 'NONE';
+          n.material.emissive.setHex(COLOR[st] || 0x64748b);
+        });
+      } catch (err) {
+        console.warn('ScopeShiftTwin.update failed (non-fatal):', err);
+      }
+    },
+  };
+
+  function update3DTopology(stateName, snapshot) {
     if (!gyroCore) return;
 
     const coreBadge = document.querySelector('#core-3d-badge');
@@ -358,9 +431,6 @@
     if (stateName === 'GOVERNED') {
       gyroCore.material.color.setHex(0x059669);
       gyroCore.material.emissive.setHex(0x059669);
-      clashBeam.material.opacity = 0.0;
-      clashBarrier.material.opacity = 0.0;
-      authBeam.material.opacity = 0.95;
       nodeNote.visible = true;
       nodeNote.material.opacity = 1.0;
 
@@ -369,9 +439,6 @@
     } else if (stateName === 'DISPUTED') {
       gyroCore.material.color.setHex(0xe11d48);
       gyroCore.material.emissive.setHex(0xe11d48);
-      clashBeam.material.opacity = 0.95;
-      clashBarrier.material.opacity = 0.35;
-      authBeam.material.opacity = 0.0;
 
       if (currentBeat === 3) {
         nodeNote.material.color.setHex(0x94a3b8);
@@ -387,13 +454,22 @@
     } else {
       gyroCore.material.color.setHex(0x2563eb);
       gyroCore.material.emissive.setHex(0x2563eb);
-      clashBeam.material.opacity = 0.0;
-      clashBarrier.material.opacity = 0.0;
-      authBeam.material.opacity = 0.0;
 
       if (coreText) coreText.textContent = 'TOPOLOGY: CONSISTENT • BRD BASELINE STANDS';
       if (pulseDot) pulseDot.style.background = 'var(--royal)';
     }
+
+    // Data-driven conflict vectors from the live snapshot: the red clash
+    // barrier shows while ANY claim is DISPUTED, the emerald authority beam
+    // while ANY claim is GOVERNED (not just the hero claim).
+    const states = snapshot && snapshot.resolutions
+      ? Object.values(snapshot.resolutions).map(r => r.state)
+      : [stateName];
+    twinAnim.clash = states.includes('DISPUTED');
+    twinAnim.beam = states.includes('GOVERNED');
+    clashBeam.material.opacity = twinAnim.clash ? 0.95 : 0.0;
+    clashBarrier.material.opacity = twinAnim.clash ? 0.3 : 0.0;
+    authBeam.material.opacity = twinAnim.beam ? 0.95 : 0.0;
   }
 
   // Camera preset buttons
@@ -503,12 +579,13 @@
     currentBeat = beatNum;
     setActiveBeatBtn(beatNum);
 
-    const useLiveAi = Boolean(aiToggle?.checked);
+    // Honest extraction: no live-AI path in the stage UI. The server reports the real
+    // mode (live only if a GEMINI_API_KEY is configured, otherwise deterministic fallback).
     try {
       const res = await fetch('/api/demo/beat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ beat: beatNum, use_live_ai: useLiveAi }),
+        body: JSON.stringify({ beat: beatNum, use_live_ai: false }),
       });
       const data = await res.json();
       appState = data.state;
@@ -517,6 +594,10 @@
         showLatency(data.extraction);
       } else {
         if (latencyBadge) latencyBadge.style.display = 'none';
+      }
+
+      if (data.already_applied && data.hint) {
+        showToast(`[NO-OP] ${data.hint}`);
       }
 
       renderAllModules(appState);
@@ -528,13 +609,59 @@
   function showLatency(meta) {
     if (!latencyBadge) return;
     latencyBadge.style.display = 'inline-flex';
-    latencyBadge.textContent = `${meta.mode.toUpperCase()}: ${meta.latency_ms}ms (${meta.model || 'Gemini'})`;
+    if (meta.mode === 'deterministic-fallback') {
+      latencyBadge.textContent = `deterministic fallback — pre-extracted evidence (${meta.latency_ms}ms; replay never calls Gemini)`;
+    } else {
+      latencyBadge.textContent = `LIVE: ${meta.latency_ms}ms (${meta.model || 'Gemini'})`;
+    }
+    // Keep the status pill showing the real mode reported by the server.
+    if (extractionModeText) {
+      if (meta.mode === 'deterministic-fallback') {
+        extractionModeText.textContent = 'EXTRACTION: DETERMINISTIC PIPELINE (VERIFIED)';
+        extractionModePill?.classList.remove('live');
+      } else if (meta.mode === 'live') {
+        extractionModeText.textContent = `EXTRACTION: GEMINI MULTI-MODAL (${meta.model || 'gemini'})`;
+        extractionModePill?.classList.add('live');
+      }
+    }
   }
 
   function setActiveBeatBtn(beat) {
     document.querySelectorAll('.stage-btn').forEach(b => b.classList.remove('active'));
     document.querySelector(`#btn-beat-${beat}`)?.classList.add('active');
+    setTeleprompterBeat(beat); // Stream E: teleprompter follows beat state
   }
+
+  // --------------------------------------------------------------------------
+  // Stage narrative captions controller
+  // --------------------------------------------------------------------------
+  const teleprompter = document.querySelector('#teleprompter');
+  const TELEPROMPTER_KEY = 'scopeshift.teleprompter.dismissed';
+
+  function setTeleprompterBeat(beat) {
+    if (!teleprompter) return;
+    teleprompter.querySelectorAll('.teleprompter-line').forEach(line => {
+      line.classList.toggle('active', Number(line.getAttribute('data-beat')) === beat);
+    });
+  }
+
+  function initTeleprompter() {
+    if (!teleprompter) return;
+    let dismissed = false;
+    try {
+      dismissed = window.localStorage.getItem(TELEPROMPTER_KEY) === '1';
+    } catch (err) { /* storage unavailable — keep the bar visible */ }
+    teleprompter.style.display = dismissed ? 'none' : 'flex';
+    setTeleprompterBeat(currentBeat);
+  }
+
+  document.querySelector('#teleprompter-close')?.addEventListener('click', () => {
+    if (!teleprompter) return;
+    teleprompter.style.display = 'none';
+    try {
+      window.localStorage.setItem(TELEPROMPTER_KEY, '1');
+    } catch (err) { /* non-fatal */ }
+  });
 
   function renderAllModules(state) {
     if (!state) return;
@@ -544,6 +671,7 @@
     renderStudioLedger(state);
     renderGovernedBrd(state);
     renderAuditLedger(state);
+    renderHeatmap(state);
 
     if (scrubber && state.events) {
       scrubber.max = Math.max(state.events.length, 4);
@@ -572,7 +700,17 @@
       reasonEl.textContent = primaryClaim.reason || 'No conflict active.';
     }
 
-    update3DTopology(stateStr);
+    // Stream E: cinematic beat transitions — animate only when the hero claim
+    // state actually changed since the last render.
+    if (prevHeroState !== null && prevHeroState !== stateStr) {
+      transitionStateBadge(prevHeroState, stateStr);
+    }
+    prevHeroState = stateStr;
+
+    update3DTopology(stateStr, state);
+    if (window.ScopeShiftTwin && typeof window.ScopeShiftTwin.update === 'function') {
+      window.ScopeShiftTwin.update(state);
+    }
 
     // Quadrant 1: Sources
     if (sourcesEl && state.sources) {
@@ -692,6 +830,29 @@
   // --------------------------------------------------------------------------
   // Module 2: Multi-Claim Governance Matrix
   // --------------------------------------------------------------------------
+  // Stream E: per-claim event-sequence sparkline. Dots are colored by the
+  // claim's real resolver state at each timeline step (red DISPUTED, emerald
+  // GOVERNED, cobalt CONSISTENT, gray no-data), computed from the snapshot's
+  // own event history — no new fetch, no scripted data.
+  const SPARK_CLASS = {
+    DISPUTED: 'spark-disputed',
+    GOVERNED: 'spark-governed',
+    CONSISTENT: 'spark-consistent',
+  };
+
+  function buildSparkline(timeline, claimId) {
+    if (!Array.isArray(timeline) || timeline.length === 0) {
+      return '<span class="spark-empty">no event history</span>';
+    }
+    const dots = timeline.map(step => {
+      const info = step.claims && step.claims[claimId];
+      const st = info ? info.state : 'NONE';
+      const cls = SPARK_CLASS[st] || 'spark-none';
+      return `<span class="spark-dot ${cls}" title="Seq #${step.sequence}: ${escapeHtml(st)}"></span>`;
+    }).join('');
+    return `<div class="sparkline" role="img" aria-label="State history for ${escapeHtml(claimId)}">${dots}</div>`;
+  }
+
   function renderClaimsMatrix(state) {
     if (!claimsGrid || !state.resolutions) return;
     claimsGrid.innerHTML = '';
@@ -738,6 +899,11 @@
           <div class="claim-field-label">Business Constraint / Rule</div>
           <div class="claim-rule-display">
             ${escapeHtml(res.rule || res.reason || 'Evaluating evidence constraint...')}
+          </div>
+
+          <div class="claim-field-label">State History (per event sequence)</div>
+          <div class="claim-spark-row">
+            ${buildSparkline(state.timeline, cid)}
           </div>
 
           <div class="claim-field-label">Active Citation Verification</div>
@@ -791,10 +957,23 @@
         <td><code>${escapeHtml(s.claim_id)}</code></td>
         <td style="max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">&ldquo;${escapeHtml(s.quote)}&rdquo;</td>
         <td>${verBadge}</td>
+        <td>${quoteMeterHtml(s.quote_verified)}</td>
         <td>${statusText}</td>
       `;
       studioLedgerRows.appendChild(tr);
     });
+  }
+
+  // Stream E: quote-match strength meter — display-only, derived from the
+  // deterministic code-verified quote check. Honest scale: verified = 100%,
+  // unverified = 0%. Not a model score.
+  function quoteMeterHtml(verified) {
+    const pct = verified ? 100 : 0;
+    return `
+      <span class="quote-meter" title="code-verified quote substring check: ${pct}%">
+        <span class="quote-meter-bar"><span class="quote-meter-fill ${verified ? '' : 'zero'}" style="width: ${pct}%"></span></span>
+        <span class="quote-meter-label">${pct}% &bull; code-verified</span>
+      </span>`;
   }
 
   function checkQuoteMatch() {
@@ -907,7 +1086,7 @@
     let html = `
       <h1>Business Requirements Document (BRD) &bull; Governed Specification</h1>
       <p style="color: var(--text-muted); font-size: 13px;">
-        Generated by <strong>ScopeShift Deterministic Engine</strong> (PS/P42 Commudle Hack Sprint)<br>
+        Generated by <strong>ScopeShift Deterministic Engine</strong> (Enterprise Edition)<br>
         Core Governance Invariant: <em>Seeing a button is not approving the button.</em>
       </p>
 
@@ -1012,16 +1191,16 @@
         <td><code>${escapeHtml(entry.source_id)}</code></td>
         <td style="font-family: var(--font-mono); font-size: 11px; color: var(--emerald-text);">${escapeHtml(entry.hash.slice(0, 16))}...${escapeHtml(entry.hash.slice(-8))}</td>
         <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${escapeHtml(entry.prev_hash.slice(0, 12))}...</td>
-        <td><span class="brand-badge" style="background: var(--emerald-soft); color: var(--emerald-text); border-color: var(--emerald-border); font-size: 9px;">VERIFIED</span></td>
+        <td><span class="brand-badge integrity-pending" data-integrity="${entry.sequence}">UNCHECKED</span></td>
       `;
       auditChainRows.appendChild(tr);
     });
   }
 
-  scrubber?.addEventListener('input', async () => {
-    const targetSeq = parseInt(scrubber.value, 10);
+  // Reused render path: manual scrub input, cinematic replay, and automated walkthrough
+  // all funnel through this one function.
+  async function scrubToSequence(targetSeq) {
     if (scrubberSeqBadge) scrubberSeqBadge.textContent = `SEQUENCE #${targetSeq}`;
-
     try {
       const res = await fetch('/api/demo/scrub', {
         method: 'POST',
@@ -1030,9 +1209,16 @@
       });
       const data = await res.json();
       renderAllModules(data.state);
+      return data.state;
     } catch (err) {
       console.error('Scrub failed:', err);
+      return null;
     }
+  }
+
+  scrubber?.addEventListener('input', () => {
+    stopReplay(); // a manual scrub takes over from the auto-replay
+    scrubToSequence(parseInt(scrubber.value, 10));
   });
 
   // Chaos Buttons
@@ -1046,7 +1232,9 @@
           body: JSON.stringify({ chaos_type: chaosType }),
         });
         const data = await res.json();
-        showToast(`[BLOCKED]: ${data.explanation}`);
+        const rule = data.rule_fired || 'n/a';
+        const classification = data.classification || 'n/a';
+        showToast(`[BLOCKED]: ${data.explanation} | RULE FIRED: ${rule} | CLASSIFICATION: ${classification}`);
       } catch (err) {
         showToast('Chaos call failed: ' + err.message);
       }
@@ -1148,6 +1336,41 @@
   }
 
   // --------------------------------------------------------------------------
+  // Backend status cluster (BigQuery / GCS / Vertex: cloud vs local mirror)
+  // --------------------------------------------------------------------------
+  function refreshCloudStatus() {
+    const badges = {
+      bigquery: document.querySelector('#cloud-bq'),
+      gcs: document.querySelector('#cloud-gcs'),
+      vertex: document.querySelector('#cloud-vertex'),
+    };
+    fetch('/api/cloud/status')
+      .then(r => r.json())
+      .then(data => {
+        for (const [key, el] of Object.entries(badges)) {
+          if (!el || !data[key]) continue;
+          const st = data[key];
+          const label = el.querySelector('.cloud-label');
+          if (label) label.textContent = `${key === 'gcs' ? 'GCS' : key === 'bigquery' ? 'BigQuery' : 'Vertex'} · ${st.connected ? 'live' : 'local'}`;
+          el.classList.toggle('connected', !!st.connected);
+          el.title = `${key}: ${st.connected ? 'connected' : 'local mirror active'} — ${st.reason || ''}`;
+        }
+        // Keep the extraction pill honest on load too (beats refresh it later).
+        if (data.extraction && extractionModeText) {
+          const mode = data.extraction.mode;
+          if (mode === 'live') {
+            extractionModeText.textContent = 'EXTRACTION: LIVE GEMINI';
+            extractionModePill?.classList.add('live');
+          } else if (mode === 'live (vertex)') {
+            extractionModeText.textContent = 'EXTRACTION: LIVE GEMINI (VERTEX AI)';
+            extractionModePill?.classList.add('live');
+          }
+        }
+      })
+      .catch(() => { /* badges keep their muted "local" default */ });
+  }
+
+  // --------------------------------------------------------------------------
   // Artifact Inspector Modal
   // --------------------------------------------------------------------------
   function openArtifactModal(sourceId) {
@@ -1158,30 +1381,150 @@
     modalTitle.textContent = `${source.id} • ${source.type.toUpperCase()}`;
 
     if (source.type === 'screenshot') {
-      modalBody.innerHTML = `
+      // Artifact URL resolves server-side: signed GCS URL when cloud is
+      // connected, otherwise the local /fixtures path (honest "via" label).
+      fetch(`/api/artifact?source_id=${encodeURIComponent(sourceId)}`)
+        .then(r => r.json())
+        .then(info => {
+          const src = escapeHtml(info.url || '/fixtures/checkout.png');
+          const via = info.via === 'gcs' ? 'served from GCS (signed URL)' : 'served locally (/fixtures)';
+          // The cited region comes from the evidence record ([x, y, w, h] in
+          // original-image pixels) and is scaled to the displayed image.
+          const region = Array.isArray(source.region) && source.region.length === 4 ? source.region : null;
+          modalBody.innerHTML = `
         <div style="text-align: center;">
-          <img src="/fixtures/checkout.png" alt="Checkout Screenshot" style="max-width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md);">
+          <div class="shot-wrap">
+            <img id="shot-img" src="${src}" alt="Checkout Screenshot" style="max-width: 100%; border: 1px solid var(--border-light); border-radius: var(--radius-md); display: block;">
+            ${region ? '<div class="shot-region" id="shot-region" title="Cited evidence region"></div><div class="shot-region-label" id="shot-region-label">cited region</div>' : ''}
+          </div>
           <div style="margin-top: 14px; font-size: 13px; color: var(--text-muted); text-align: left;">
             <strong>Detected UI Element:</strong> &ldquo;${escapeHtml(source.quote)}&rdquo;<br>
             <strong>Observation:</strong> ${escapeHtml(source.observation)}<br>
+            <strong>Artifact:</strong> ${via}<br>
+            ${region
+              ? `<strong>Cited region:</strong> [${region.map(n => escapeHtml(String(n))).join(', ')}] on the 900&times;620 original, scaled to the displayed image.<br>`
+              : '<strong>Cited region:</strong> none recorded for this evidence.<br>'}
             <span style="color: var(--crimson-text); font-weight: 700;">Invariant Check: Seeing a button is not approving the button. Observation cannot authorize.</span>
           </div>
         </div>
       `;
+          if (region) {
+            const placeRegion = () => {
+              const img = document.querySelector('#shot-img');
+              const ov = document.querySelector('#shot-region');
+              const lbl = document.querySelector('#shot-region-label');
+              if (!img || !ov || !img.clientWidth) return;
+              const natW = img.naturalWidth || 900;
+              const natH = img.naturalHeight || 620;
+              const sx = img.clientWidth / natW;
+              const sy = img.clientHeight / natH;
+              const l = region[0] * sx, t = region[1] * sy;
+              ov.style.left = l + 'px';
+              ov.style.top = t + 'px';
+              ov.style.width = (region[2] * sx) + 'px';
+              ov.style.height = (region[3] * sy) + 'px';
+              if (lbl) {
+                lbl.style.left = l + 'px';
+                lbl.style.top = Math.max(0, t - 2) + 'px';
+              }
+            };
+            const shotImg = document.querySelector('#shot-img');
+            if (shotImg.complete && shotImg.naturalWidth) placeRegion();
+            else shotImg.addEventListener('load', placeRegion);
+          }
+        })
+        .catch(() => {
+          modalBody.innerHTML = `<div style="text-align: center;"><img src="/fixtures/checkout.png" alt="Checkout Screenshot" style="max-width: 100%;"></div>`;
+        });
     } else {
-      modalBody.innerHTML = `
-        <div style="background: var(--surface-subtle); padding: 18px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 13px;">
-          <p style="margin: 0 0 10px; color: var(--text-muted); text-transform: uppercase;">Original Evidence Text:</p>
-          <pre style="white-space: pre-wrap; color: var(--text-headline); margin: 0 0 16px;">${escapeHtml(source.quote)}</pre>
-          <div style="border-top: 1px solid var(--border-light); padding-top: 10px; font-size: 12px;">
-            <strong>Verified In Text:</strong> ${source.quote_verified ? '<span style="color: var(--emerald-text);">&check; YES</span>' : '<span style="color: var(--crimson-text);">&times; NO</span>'}<br>
-            <strong>Scope Change Flag:</strong> ${source.proposed_scope_change ? 'TRUE (Authority Granted)' : 'FALSE (Observation Only)'}
-          </div>
-        </div>
-      `;
+      renderTextArtifact(source);
     }
 
     artifactModal.style.display = 'flex';
+  }
+
+  // Stream D: artifact proof — highlight the exact verified quote substring
+  // inside the live source text. First tries a verbatim match; falls back to
+  // an NFKC/case/whitespace-tolerant search that maps back into the original
+  // text offsets. Never throws — worst case the quote shows unhighlighted.
+  function normalizeForSearch(s) {
+    return String(s || '')
+      .normalize('NFKC')
+      .replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function locateQuote(text, quote) {
+    if (!text || !quote) return null;
+    let i = text.indexOf(quote);
+    if (i >= 0) return [i, i + quote.length];
+    const map = [];
+    let norm = '';
+    for (let k = 0; k < text.length; k++) {
+      const frag = normalizeForSearch(text[k]);
+      if (frag === ' ') {
+        if (!norm.endsWith(' ')) { norm += ' '; map.push(k); }
+      } else if (frag) {
+        for (const ch of frag) { norm += ch; map.push(k); }
+      }
+    }
+    norm = norm.trim();
+    const qn = normalizeForSearch(quote);
+    if (!qn || !norm) return null;
+    const j = norm.indexOf(qn);
+    if (j < 0 || j >= map.length) return null;
+    const start = map[j];
+    const endIdx = map[Math.min(j + qn.length - 1, map.length - 1)] + 1;
+    return [start, Math.max(endIdx, start + 1)];
+  }
+
+  const TEXT_ARTIFACT_URLS = { brd: '/fixtures/brd.txt', client_note: '/fixtures/client_note.txt' };
+
+  function textArtifactMeta(source) {
+    return `
+          <div style="border-top: 1px solid var(--border-light); padding-top: 10px; font-size: 12px;">
+            <strong>Verified In Text:</strong> ${source.quote_verified ? '<span style="color: var(--emerald-text);">&check; YES</span>' : '<span style="color: var(--crimson-text);">&times; NO</span>'}<br>
+            <strong>Scope Change Flag:</strong> ${source.proposed_scope_change ? 'TRUE (Authority Granted)' : 'FALSE (Observation Only)'}
+          </div>`;
+  }
+
+  function renderTextArtifact(source) {
+    const quoteOnly = `
+        <div style="background: var(--surface-subtle); padding: 18px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 13px;">
+          <p style="margin: 0 0 10px; color: var(--text-muted); text-transform: uppercase;">Recorded Quote (artifact text unavailable):</p>
+          <pre style="white-space: pre-wrap; color: var(--text-headline); margin: 0 0 16px;">${escapeHtml(source.quote)}</pre>
+          ${textArtifactMeta(source)}
+        </div>`;
+    const url = TEXT_ARTIFACT_URLS[source.type];
+    if (!url) {
+      modalBody.innerHTML = quoteOnly;
+      return;
+    }
+    modalBody.innerHTML = `
+        <div style="background: var(--surface-subtle); padding: 18px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 13px;">
+          <p style="margin: 0 0 10px; color: var(--text-muted); text-transform: uppercase;">Original Evidence Text:</p>
+          <pre style="white-space: pre-wrap; color: var(--text-headline); margin: 0 0 16px;">Loading artifact text&hellip;</pre>
+        </div>`;
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error('artifact text unavailable'); return r.text(); })
+      .then(text => {
+        const span = locateQuote(text, source.quote);
+        const body = span
+          ? escapeHtml(text.slice(0, span[0]))
+            + '<mark class="quote-mark">' + escapeHtml(text.slice(span[0], span[1])) + '</mark>'
+            + escapeHtml(text.slice(span[1]))
+          : escapeHtml(text)
+            + '<p class="mark-miss">The verified quote is on the evidence record, but this live copy of the artifact no longer contains it verbatim.</p>';
+        modalBody.innerHTML = `
+        <div style="background: var(--surface-subtle); padding: 18px; border-radius: var(--radius-md); font-family: var(--font-mono); font-size: 13px;">
+          <p style="margin: 0 0 10px; color: var(--text-muted); text-transform: uppercase;">Original Evidence Text (verified quote highlighted):</p>
+          <pre style="white-space: pre-wrap; color: var(--text-headline); margin: 0 0 16px;">${body}</pre>
+          ${textArtifactMeta(source)}
+        </div>`;
+      })
+      .catch(() => { modalBody.innerHTML = quoteOnly; });
   }
 
   modalClose?.addEventListener('click', () => {
@@ -1193,11 +1536,15 @@
       if (artifactModal) artifactModal.style.display = 'none';
       if (governModal) governModal.style.display = 'none';
       if (chaosToast) chaosToast.style.display = 'none';
-    } else if (e.key === '1' && !isInputActive()) {
+      closeHelp();
+      if (judgeActive) exitJudgeMode();
+    } else if (e.key === '?' && !isInputActive()) {
+      toggleHelp();
+    } else if (e.key === '1' && !isInputActive() && !judgeActive) {
       triggerBeat(1);
-    } else if (e.key === '2' && !isInputActive()) {
+    } else if (e.key === '2' && !isInputActive() && !judgeActive) {
       triggerBeat(2);
-    } else if (e.key === '3' && !isInputActive()) {
+    } else if (e.key === '3' && !isInputActive() && !judgeActive) {
       triggerBeat(3);
     }
   });
@@ -1212,6 +1559,54 @@
   document.querySelector('#btn-beat-2')?.addEventListener('click', () => triggerBeat(2));
   document.querySelector('#btn-beat-3')?.addEventListener('click', () => triggerBeat(3));
 
+  // Stream E: visible stage-recovery reset — double-click-to-confirm (inline,
+  // no modal) so an accidental stage wipe is hard but recovery is one click.
+  const btnResetDemo = document.querySelector('#btn-reset-demo');
+  let resetArmed = false;
+  let resetArmTimer = null;
+
+  function disarmReset() {
+    resetArmed = false;
+    if (resetArmTimer) {
+      clearTimeout(resetArmTimer);
+      resetArmTimer = null;
+    }
+    if (btnResetDemo) {
+      btnResetDemo.classList.remove('armed');
+      btnResetDemo.innerHTML = '&#10226; Reset State';
+    }
+  }
+
+  btnResetDemo?.addEventListener('click', async () => {
+    if (!resetArmed) {
+      resetArmed = true;
+      btnResetDemo.classList.add('armed');
+      btnResetDemo.innerHTML = 'Click again to confirm reset';
+      resetArmTimer = setTimeout(disarmReset, 3000);
+      return;
+    }
+    disarmReset();
+    try {
+      const res = await fetch('/api/demo/reset', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast('Reset rejected: ' + (data.error?.message || 'server refused the reset'));
+        return;
+      }
+      stopFeed();
+      stopReplay();
+      exitJudgeMode(true);
+      appState = data; // /api/demo/reset returns the snapshot directly
+      currentBeat = 1;
+      prevHeroState = null; // re-seed — don't animate the reset itself
+      setActiveBeatBtn(1);
+      renderAllModules(appState);
+      showToast('System state reset to initial baseline.');
+    } catch (err) {
+      showToast('Reset failed: ' + err.message);
+    }
+  });
+
   function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -1222,9 +1617,564 @@
       .replace(/'/g, '&#039;');
   }
 
+  // ==========================================================================
+  // 6. Live Evidence Feed (SSE) & Automated Walkthrough
+  // ==========================================================================
+  const btnJudgeMode = document.querySelector('#btn-judge-mode');
+  const btnFeedStart = document.querySelector('#btn-feed-start');
+  const btnFeedStop = document.querySelector('#btn-feed-stop');
+  const feedTicker = document.querySelector('#feed-ticker');
+  const judgeOverlay = document.querySelector('#judge-overlay');
+  const judgeProgress = document.querySelector('#judge-progress');
+  const judgeCaption = document.querySelector('#judge-caption');
+  const judgeActions = document.querySelector('#judge-actions');
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // --------------------------------------------------------------------------
+  // 6a. Live evidence feed client
+  // --------------------------------------------------------------------------
+  let feedSource = null;
+
+  const FEED_ICONS = {
+    slack: '\uD83D\uDCAC', email: '\u2709\uFE0F', screenshot: '\uD83D\uDCF8',
+    directive: '\uD83D\uDCDC', withdrawal: '\u21A9\uFE0F',
+  };
+  const FEED_LABELS = {
+    slack: 'SLACK', email: 'EMAIL', screenshot: 'SCREENSHOT',
+    directive: 'CLIENT DIRECTIVE', withdrawal: 'WITHDRAWAL',
+  };
+
+  function setFeedButtons(running) {
+    if (btnFeedStart) btnFeedStart.disabled = running;
+    if (btnFeedStop) btnFeedStop.disabled = !running;
+  }
+
+  function appendFeedItem(d) {
+    if (!feedTicker) return;
+    if (feedTicker.querySelector('.feed-empty')) feedTicker.innerHTML = '';
+
+    const kind = d.kind || 'email';
+    const transitions = d.transitions || [];
+    const deltaHtml = transitions.map(t => {
+      const toGov = t.to === 'GOVERNED';
+      const cls = toGov ? 'feed-tr-governed' : (t.to === 'DISPUTED' ? 'feed-tr-disputed' : 'feed-tr-other');
+      return `<span class="feed-transition ${cls}">${escapeHtml(t.claim_id)}: ${escapeHtml(t.from || '?')} &rarr; ${escapeHtml(t.to)}</span>`;
+    }).join('');
+
+    const verTag = d.quote_verified
+      ? '<span class="indicator-valid">&check; quote verified</span>'
+      : (d.ingest_error
+        ? `<span class="indicator-invalid">&times; rejected: ${escapeHtml(d.ingest_error)}</span>`
+        : '<span class="indicator-invalid">&times; unverified</span>');
+    const govTag = d.governing
+      ? '<span class="feed-gov-tag">GOVERNING AUTHORITY</span>'
+      : (d.kind === 'withdrawal' && d.withdraws
+        ? `<span class="feed-gov-tag feed-gov-revoke">REVOKES ${escapeHtml(d.withdraws.source_id)}</span>`
+        : '');
+
+    const item = document.createElement('div');
+    item.className = `feed-item feed-kind-${escapeHtml(kind)}`;
+    item.innerHTML = `
+      <span class="feed-icon" aria-hidden="true">${FEED_ICONS[kind] || '\u2709\uFE0F'}</span>
+      <div class="feed-body">
+        <div class="feed-meta">
+          <span class="feed-kind-tag">${escapeHtml(FEED_LABELS[kind] || kind.toUpperCase())}</span>
+          ${d.source_id ? `<span class="feed-sid">${escapeHtml(d.source_id)}</span>` : ''}
+          <span class="feed-claim">${escapeHtml(d.claim_id || '')}</span>
+        </div>
+        ${d.quote ? `<p class="feed-quote">&ldquo;${escapeHtml(d.quote)}&rdquo;</p>` : ''}
+        ${d.observation ? `<p class="feed-obs">${escapeHtml(d.observation)}</p>` : ''}
+        <div class="feed-delta">${verTag} ${govTag} ${deltaHtml}</div>
+      </div>
+    `;
+    feedTicker.appendChild(item);
+    feedTicker.scrollTop = feedTicker.scrollHeight;
+  }
+
+  let stateFlashTimer = null;
+  function flashStateBadge() {
+    if (!stateEl) return;
+    stateEl.classList.remove('state-flash');
+    void stateEl.offsetWidth; // restart the animation
+    stateEl.classList.add('state-flash');
+    if (stateFlashTimer) clearTimeout(stateFlashTimer);
+    stateFlashTimer = setTimeout(() => stateEl.classList.remove('state-flash'), 1600);
+  }
+
+  // Stream E: cinematic beat transition. Called from the shared render path
+  // (renderCockpit) whenever the hero claim state actually changes, so beats,
+  // the live feed, the replay and the scrubber all get the same choreography:
+  // the giant badge flips/slides, the rationale narrative flashes, and the
+  // event-log column pulses. Reuses the Stream C state-flash keyframes.
+  function transitionStateBadge(oldState, newState) {
+    if (!stateEl || oldState === newState) return;
+    flashStateBadge(); // Stream C keyframes, reused — not duplicated
+
+    stateEl.classList.remove('badge-flip');
+    void stateEl.offsetWidth;
+    stateEl.classList.add('badge-flip');
+    setTimeout(() => stateEl.classList.remove('badge-flip'), 900);
+
+    if (reasonEl) {
+      reasonEl.classList.remove('narrative-flash');
+      void reasonEl.offsetWidth;
+      reasonEl.classList.add('narrative-flash');
+      setTimeout(() => reasonEl.classList.remove('narrative-flash'), 1600);
+    }
+
+    const logColumn = eventsEl ? eventsEl.closest('.quad-column') : null;
+    if (logColumn) {
+      logColumn.classList.remove('log-pulse');
+      void logColumn.offsetWidth;
+      logColumn.classList.add('log-pulse');
+      setTimeout(() => logColumn.classList.remove('log-pulse'), 1600);
+    }
+  }
+
+  function handleFeedArrival(d) {
+    appendFeedItem(d);
+    // Reuse the exact same render path as beats / ingest — no duplicated logic.
+    if (d.state) {
+      appState = d.state;
+      renderAllModules(appState);
+    }
+    const heroTransition = (d.transitions || []).find(t => t.claim_id === 'checkout.payment_methods');
+    if (heroTransition) flashStateBadge();
+  }
+
+  function handleFeedEnd(d) {
+    if (!feedTicker) return;
+    const note = document.createElement('p');
+    note.className = 'feed-end-note';
+    note.textContent = d && d.will_repeat
+      ? 'Scenario pass complete — looping (booth mode). Press Stop to end.'
+      : 'Scenario complete — every arrival above went through the real validation pipeline and event log.';
+    feedTicker.appendChild(note);
+    feedTicker.scrollTop = feedTicker.scrollHeight;
+    if (!(d && d.will_repeat)) stopFeed();
+  }
+
+  function startFeed() {
+    if (feedSource) return;
+    exitJudgeMode(true); // the feed owns the timeline while it runs
+    if (feedTicker) feedTicker.innerHTML = '<p class="feed-empty">Connecting to the evidence stream&hellip;</p>';
+    try {
+      feedSource = new EventSource('/api/feed');
+    } catch (err) {
+      if (feedTicker) feedTicker.innerHTML = '<p class="feed-empty">Stream failed to start in this browser.</p>';
+      return;
+    }
+    feedSource.addEventListener('evidence-arrival', (e) => {
+      try { handleFeedArrival(JSON.parse(e.data)); } catch (err) { console.error('Feed payload error:', err); }
+    });
+    feedSource.addEventListener('feed-end', (e) => {
+      try { handleFeedEnd(JSON.parse(e.data)); } catch (err) { stopFeed(); }
+    });
+    feedSource.addEventListener('feed-start', () => {
+      if (feedTicker && feedTicker.querySelector('.feed-empty')) feedTicker.innerHTML = '';
+    });
+    feedSource.onerror = () => {
+      // Fires on network drop; a clean feed-end already closed the source.
+      if (feedSource && feedSource.readyState === EventSource.CLOSED) stopFeed();
+    };
+    setFeedButtons(true);
+  }
+
+  function stopFeed() {
+    if (feedSource) {
+      feedSource.close();
+      feedSource = null;
+    }
+    setFeedButtons(false);
+  }
+
+  btnFeedStart?.addEventListener('click', startFeed);
+  btnFeedStop?.addEventListener('click', stopFeed);
+
+  // --------------------------------------------------------------------------
+  // 6b. Automated walkthrough: multi-stage simulation with narration
+  // --------------------------------------------------------------------------
+  // Captions for the multi-stage walkthrough demonstration
+  const JUDGE_CAPTIONS = {
+    intro: 'One checkout claim. Three conflicting sources. One accountable answer. Automated walkthrough demonstrates deterministic authority resolution as evidence evolves.',
+    1: 'Stage 1 — Conflict detected. The BRD specifies UPI only; staging shows a Card button. Two sources disagree, so ScopeShift withholds the requirement. Seeing a button is not approving the button.',
+    2: 'Stage 2 — The client explicitly authorizes the change. The quote is verified against source text, an authorized client decision governs — and the BRD updates with the governing citation.',
+    3: 'Stage 3 — The client withdraws the decision. The requirement is withheld from the BRD — while the immutable audit trail preserves who withdrew it, when, and the prior specification.',
+    done: 'Lifecycle walkthrough complete: DISPUTED \u2192 GOVERNED \u2192 DISPUTED. Every transition is backed by a verified citation in the immutable audit log — replay it, or inspect the audit trail.',
+  };
+
+  let judgeRunToken = 0;
+  let judgeActive = false;
+
+  function setJudgeCaption(text) {
+    if (judgeCaption) judgeCaption.textContent = text;
+  }
+
+  function setJudgeProgress(text) {
+    if (judgeProgress) judgeProgress.textContent = text;
+  }
+
+  function showJudgeExitOnly() {
+    if (!judgeActions) return;
+    judgeActions.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'btn-pill btn-outline';
+    btn.textContent = 'Exit walkthrough';
+    btn.addEventListener('click', () => exitJudgeMode());
+    judgeActions.appendChild(btn);
+  }
+
+  function showJudgeEndCard() {
+    if (!judgeActions) return;
+    judgeActions.innerHTML = '';
+
+    const replay = document.createElement('button');
+    replay.className = 'btn-pill btn-primary';
+    replay.textContent = '\u27F3 Replay';
+    replay.addEventListener('click', () => startJudgeMode());
+    judgeActions.appendChild(replay);
+
+    const audit = document.createElement('button');
+    audit.className = 'btn-pill btn-outline';
+    audit.textContent = 'Open audit trail';
+    audit.addEventListener('click', () => {
+      exitJudgeMode();
+      window.location.hash = 'audit';
+    });
+    judgeActions.appendChild(audit);
+
+    const exit = document.createElement('button');
+    exit.className = 'btn-pill btn-outline';
+    exit.textContent = 'Exit walkthrough';
+    exit.addEventListener('click', () => exitJudgeMode());
+    judgeActions.appendChild(exit);
+  }
+
+  async function startJudgeMode() {
+    stopFeed(); // walkthrough owns the timeline while it runs
+    // Reset-aware beats always start clean: beat 1 re-seeds first.
+    if (window.location.hash !== '#cockpit' && window.location.hash !== '') {
+      window.location.hash = 'cockpit';
+    }
+    const token = ++judgeRunToken;
+    judgeActive = true;
+    if (judgeOverlay) judgeOverlay.style.display = 'flex';
+    showJudgeExitOnly();
+    setJudgeProgress('WALKTHROUGH \u2022 INTRO');
+    setJudgeCaption(JUDGE_CAPTIONS.intro);
+    await sleep(2600);
+    if (token !== judgeRunToken) return;
+
+    for (const beat of [1, 2, 3]) {
+      if (token !== judgeRunToken) return;
+      setJudgeProgress(`SIMULATION \u2022 STAGE ${beat} / 3`);
+      setJudgeCaption(JUDGE_CAPTIONS[beat]);
+      await triggerBeat(beat);
+      if (token !== judgeRunToken) return;
+      await sleep(4000);
+    }
+    if (token !== judgeRunToken) return;
+    judgeActive = false;
+    setJudgeProgress('SIMULATION \u2022 COMPLETE');
+    setJudgeCaption(JUDGE_CAPTIONS.done);
+    showJudgeEndCard();
+  }
+
+  function exitJudgeMode(silent) {
+    judgeRunToken++;
+    judgeActive = false;
+    if (judgeOverlay) judgeOverlay.style.display = 'none';
+    if (!silent) showJudgeExitOnly();
+  }
+
+  btnJudgeMode?.addEventListener('click', startJudgeMode);
+
+  // ==========================================================================
+  // 7. Stream D: Tier-2 Differentiators
+  // ==========================================================================
+
+  // --------------------------------------------------------------------------
+  // 7a. "Ask the evidence" — deterministic Q&A over the live snapshot
+  // --------------------------------------------------------------------------
+  const askForm = document.querySelector('#ask-form');
+  const askInput = document.querySelector('#ask-input');
+  const askAnswer = document.querySelector('#ask-answer');
+
+  document.querySelectorAll('.ask-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (askInput) askInput.value = chip.getAttribute('data-q') || '';
+      if (askForm && typeof askForm.requestSubmit === 'function') askForm.requestSubmit();
+    });
+  });
+
+  askForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = (askInput?.value || '').trim();
+    if (!q || !askAnswer) return;
+    askAnswer.style.display = 'block';
+    askAnswer.innerHTML = '<p class="ask-loading">Consulting the evidence snapshot&hellip;</p>';
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Ask failed');
+      renderAskAnswer(q, data);
+    } catch (err) {
+      askAnswer.innerHTML = `<p class="ask-error">Could not reach the evidence engine: ${escapeHtml(err.message)}</p>`;
+    }
+  });
+
+  function renderAskAnswer(question, data) {
+    if (!askAnswer) return;
+    const cites = (data.citations || []).map(c => `
+      <li class="ask-cite">
+        <span class="card-type-tag">${escapeHtml(c.source_id)}</span>
+        <span>&ldquo;${escapeHtml(c.quote)}&rdquo;</span>
+      </li>`).join('');
+    askAnswer.innerHTML = `
+      <p class="ask-q">Q: ${escapeHtml(question)}</p>
+      <p class="ask-a">${escapeHtml(data.answer)}</p>
+      ${cites
+        ? `<ul class="ask-cites">${cites}</ul>`
+        : '<p class="ask-nocite">No citations — the engine had no evidence to cite for this.</p>'}
+      <span class="brand-badge ask-mode">ANSWER MODE: ${escapeHtml(String(data.mode || 'deterministic').toUpperCase())} &bull; computed from the live snapshot</span>
+    `;
+  }
+
+  // --------------------------------------------------------------------------
+  // 7b. Cinematic time-travel auto-replay — reuses the scrub render path
+  // --------------------------------------------------------------------------
+  const btnReplay = document.querySelector('#btn-replay-story');
+  const btnReplayStop = document.querySelector('#btn-replay-stop');
+  const replayCaption = document.querySelector('#replay-caption');
+  let replayToken = 0;
+
+  function setReplayButtons(running) {
+    if (btnReplay) btnReplay.disabled = running;
+    if (btnReplayStop) btnReplayStop.disabled = !running;
+  }
+
+  // Captions are derived from real event data: the event at this sequence,
+  // its source record, and the resulting claim states — nothing hardcoded.
+  function buildReplayCaption(seq, state) {
+    const ev = (state.events || []).find(e => e.event_sequence === seq);
+    const primary = (state.resolutions || {})['checkout.payment_methods'] || {};
+    const st = primary.state || 'UNKNOWN';
+    if (!ev) {
+      return `#0 — genesis. The evidence log is empty; sources are registered but nothing is active yet → ${st}.`;
+    }
+    const src = (state.sources || []).find(s => s.id === ev.source_id) || {};
+    const what = src.observation || src.quote || '(no description)';
+    let line = `#${seq} — ${ev.source_id} (${src.type || 'unknown'}) ${ev.event}: ${what} → ${st}.`;
+    if (src.type === 'screenshot' && st === 'DISPUTED') {
+      line += ' Seeing a button is not approving the button — an observation can never authorize scope.';
+    }
+    if (ev.event === 'REMOVED') {
+      line += ' The requirement leaves the BRD, but the reason is retained in the audit trail.';
+    }
+    return line;
+  }
+
+  async function startReplay() {
+    stopFeed();
+    exitJudgeMode(true); // the replay owns the timeline while it runs
+    const token = ++replayToken;
+    setReplayButtons(true);
+    if (replayCaption) replayCaption.style.display = 'block';
+    const maxSeq = scrubber ? parseInt(scrubber.max, 10) : 0;
+    for (let i = 0; i <= maxSeq; i++) {
+      if (token !== replayToken) return;
+      if (scrubber) scrubber.value = i;
+      const state = await scrubToSequence(i); // the existing scrub render path
+      if (token !== replayToken) return;
+      if (state && replayCaption) replayCaption.textContent = buildReplayCaption(i, state);
+      await sleep(1600);
+    }
+    if (token !== replayToken) return;
+    stopReplay();
+    fetchState(); // restore the live view after the story
+  }
+
+  function stopReplay() {
+    replayToken++;
+    setReplayButtons(false);
+    if (replayCaption) replayCaption.style.display = 'none';
+  }
+
+  btnReplay?.addEventListener('click', startReplay);
+  btnReplayStop?.addEventListener('click', stopReplay);
+
+  // --------------------------------------------------------------------------
+  // 7c. Contradiction heatmap — claims × sources, computed from the snapshot
+  // --------------------------------------------------------------------------
+  const heatmapTable = document.querySelector('#heatmap-table');
+  const heatmapDetail = document.querySelector('#heatmap-detail');
+
+  function heatCellClass(cid, source, cite) {
+    if (cite) {
+      switch (cite.role) {
+        case 'governing': return 'cell-govern';
+        case 'conflicting': return 'cell-conflict';
+        case 'baseline': return 'cell-baseline';
+        case 'corroborating': return 'cell-support';
+        case 'superseded': return 'cell-superseded';
+        default: return 'cell-neutral';
+      }
+    }
+    return source.claim_id === cid ? 'cell-neutral' : 'cell-na';
+  }
+
+  const HEAT_LABEL = {
+    'cell-govern': 'GOVERNS', 'cell-conflict': 'CONTRADICTS', 'cell-baseline': 'BASELINE',
+    'cell-support': 'SUPPORTS', 'cell-superseded': 'SUPERSEDED',
+    'cell-neutral': 'NEUTRAL', 'cell-na': '—',
+  };
+
+  function renderHeatmap(state) {
+    if (!heatmapTable || !state.resolutions || !state.sources) return;
+    const cids = Object.keys(state.resolutions);
+    const sources = [...state.sources].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    const citeRole = {};
+    for (const cid of cids) {
+      citeRole[cid] = {};
+      for (const c of (state.resolutions[cid].citations || [])) citeRole[cid][c.source_id] = c;
+    }
+    let html = '<thead><tr><th>Claim \\ Source</th>' +
+      sources.map(s => `<th title="${escapeHtml(s.type)}">${escapeHtml(s.id)}</th>`).join('') + '</tr></thead><tbody>';
+    for (const cid of cids) {
+      const title = state.resolutions[cid].title || cid;
+      html += `<tr><th title="${escapeHtml(cid)}">${escapeHtml(title)}</th>`;
+      for (const s of sources) {
+        const cls = heatCellClass(cid, s, citeRole[cid][s.id]);
+        html += `<td class="heat-cell ${cls}" data-cid="${escapeHtml(cid)}" data-sid="${escapeHtml(s.id)}" tabindex="0" title="${escapeHtml(title)} × ${escapeHtml(s.id)}: ${HEAT_LABEL[cls]}">${HEAT_LABEL[cls]}</td>`;
+      }
+      html += '</tr>';
+    }
+    heatmapTable.innerHTML = html + '</tbody>';
+    if (heatmapDetail) heatmapDetail.style.display = 'none';
+  }
+
+  function showHeatDetail(cid, sid) {
+    if (!heatmapDetail || !appState) return;
+    const r = appState.resolutions[cid];
+    const src = (appState.sources || []).find(s => s.id === sid);
+    if (!r || !src) return;
+    const cite = (r.citations || []).find(c => c.source_id === sid);
+    const role = cite ? cite.role : (src.claim_id === cid ? 'neutral' : 'unrelated');
+    const counterpartRole = {
+      conflicting: 'baseline', baseline: 'conflicting', governing: 'superseded',
+      superseded: 'governing', corroborating: 'baseline', observation: 'baseline',
+    }[role];
+    const counterparts = counterpartRole ? (r.citations || []).filter(c => c.role === counterpartRole) : [];
+    // FR-7 mirror: only a verified client-note scope change can govern.
+    const canGovern = Boolean(src.proposed_scope_change && src.quote_verified && src.type === 'client_note');
+    const verdictWord = {
+      conflicting: 'CONTRADICTS', governing: 'GOVERNS', baseline: 'BASELINE',
+      corroborating: 'SUPPORTS', superseded: 'SUPERSEDED', observation: 'OBSERVATION',
+      neutral: 'NEUTRAL', unrelated: 'UNRELATED',
+    }[role] || String(role).toUpperCase();
+
+    const counterHtml = counterparts.length
+      ? counterparts.map(c => `<div class="heat-ev"><span class="card-type-tag">${escapeHtml(c.source_id)}</span> <span class="heat-role">${escapeHtml(c.role)}</span><p>&ldquo;${escapeHtml(c.quote)}&rdquo;</p></div>`).join('')
+      : '<p class="heat-none">No counterpart evidence on the other side of this pair.</p>';
+
+    heatmapDetail.style.display = 'block';
+    heatmapDetail.innerHTML = `
+      <div class="heat-detail-head">
+        <strong>${escapeHtml(r.title || cid)} &times; ${escapeHtml(sid)}</strong>
+        <span class="brand-badge">${verdictWord}</span>
+      </div>
+      <div class="heat-ev-grid">
+        <div class="heat-ev">
+          <span class="card-type-tag">${escapeHtml(src.id)}</span>
+          <span class="heat-role">${escapeHtml(src.type)} &bull; ${escapeHtml(role)}</span>
+          <p>&ldquo;${escapeHtml(src.quote)}&rdquo;</p>
+          <div class="heat-validation">
+            quote_verified: <strong>${src.quote_verified ? 'YES' : 'NO'}</strong> &bull;
+            proposed_scope_change: <strong>${src.proposed_scope_change ? 'TRUE' : 'FALSE'}</strong> &bull;
+            can govern (FR-7): <strong>${canGovern ? 'YES' : 'NO'}</strong>
+          </div>
+        </div>
+        <div class="heat-vs">vs</div>
+        <div>${counterHtml}</div>
+      </div>
+      <p class="heat-rule"><strong>Rule:</strong> ${escapeHtml(r.rule || r.reason || '')}</p>
+      <p class="heat-reason">${escapeHtml(String(r.reason || '').slice(0, 420))}</p>
+    `;
+    heatmapDetail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  heatmapTable?.addEventListener('click', (e) => {
+    const td = e.target.closest('td.heat-cell');
+    if (td && appState) showHeatDetail(td.getAttribute('data-cid'), td.getAttribute('data-sid'));
+  });
+  heatmapTable?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const td = e.target.closest('td.heat-cell');
+    if (td && appState) {
+      e.preventDefault();
+      showHeatDetail(td.getAttribute('data-cid'), td.getAttribute('data-sid'));
+    }
+  });
+
+  // --------------------------------------------------------------------------
+  // 7d. Verify hash chain — genuine client-side recomputation via WebCrypto
+  // --------------------------------------------------------------------------
+  const btnVerifyChain = document.querySelector('#btn-verify-chain');
+  const verifyStatus = document.querySelector('#verify-chain-status');
+
+  async function sha256Hex(str) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  btnVerifyChain?.addEventListener('click', async () => {
+    if (!verifyStatus) return;
+    if (!window.crypto || !crypto.subtle) {
+      verifyStatus.textContent = 'WebCrypto unavailable in this browser — cannot verify client-side.';
+      return;
+    }
+    verifyStatus.classList.remove('bad');
+    verifyStatus.textContent = 'Recomputing hashes…';
+    try {
+      const res = await fetch('/api/audit/chain');
+      const data = await res.json();
+      const blocks = data.blocks || [];
+      let prev = data.genesis_prev_hash || '0'.repeat(64);
+      let okCount = 0;
+      for (const b of blocks) {
+        const recomputed = await sha256Hex(b.hash_input);
+        const ok = recomputed === b.hash && b.prev_hash === prev;
+        if (ok) okCount++;
+        prev = b.hash;
+        const cell = auditChainRows?.querySelector(`[data-integrity="${b.sequence}"]`);
+        if (cell) {
+          cell.innerHTML = ok
+            ? '<span class="brand-badge integrity-ok">VERIFIED ✓</span>'
+            : '<span class="brand-badge integrity-bad">MISMATCH ✗</span>';
+        }
+      }
+      if (blocks.length > 0 && okCount === blocks.length) {
+        verifyStatus.textContent = `Chain valid: ${okCount}/${blocks.length} blocks recomputed and linked.`;
+      } else {
+        verifyStatus.textContent = `Chain INVALID: ${blocks.length - okCount}/${blocks.length} blocks failed.`;
+        verifyStatus.classList.add('bad');
+      }
+    } catch (err) {
+      verifyStatus.textContent = 'Verification failed: ' + err.message;
+      verifyStatus.classList.add('bad');
+    }
+  });
+
   // Initialize
   init3DMatrix();
+  initTeleprompter();
   fetchState();
+  refreshCloudStatus();
 
   // Route initial hash if present
   if (window.location.hash) {

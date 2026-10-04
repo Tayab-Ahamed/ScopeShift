@@ -7,14 +7,23 @@
   - [x] Add `POST /api/ingest` for dynamic evidence ingestion & automatic `ADDED` event
   - [x] Add `POST /api/govern` and `POST /api/withdraw` for quick scope authority actions
   - [x] Add `GET /api/export/json` for audit payload download
-- [x] Task 3: Swiss-Industrial Tactical Telemetry Design System & CSS Overhaul (`styles.css`)
-  - [x] Implement pure 90-degree industrial architecture, obsidian substrate, phosphor text, hazard red & terminal emerald
+- [x] Task 3: Light Editorial Design System & CSS Overhaul (`styles.css`)
+  - [x] Implement the light editorial system: light canvas (#f8f9fa), serif headlines (Newsreader), crimson/emerald/royal accent palette
   - [x] Implement tabbed module switching and tactile controls
 - [x] Task 4: Interactive 3D Spatial Knowledge Graph & Laser Vectors (`app.js`, Three.js)
   - [x] Build 3D spatial grid, physical node cards, central resolver gyroscope, dynamic volumetric laser beams, and node raycaster
 - [x] Task 5: Interactive Multi-Claim UI Modules, Ingestion Studio & BRD Generator (`index.html`, `app.js`)
-  - [x] Add Cockpit, Claims Matrix, Ingestion Studio, Governed BRD, and Audit Log views
+  - [x] Add Cockpit, Claims Matrix, Ingestion Studio, Governed BRD, and Audit Log views (5 pages)
   - [x] Wire dynamic forms, live updates, time-travel scrubber, and chaos tests
-- [x] Task 6: End-to-End Verification, Automated Tests & Visual Validation
-  - [x] Run `python -m pytest` (53 / 53 tests passed)
-  - [x] Use Chrome DevTools MCP to verify UI appearance, 3D matrix, and console logs
+- [x] Task 6: End-to-End Verification & Automated Tests
+  - [x] Run `python3 -m pytest` (52 / 52 tests passed)
+  - [x] Server smoke test: `python3 demo_server.py` + curl `/api/health`, `/api/state`, beats 1→2→3, `/api/demo/chaos`
+- [x] Task 7: Tier-0 Credibility Fixes (Stream A)
+  - [x] Chaos tiles execute the real `validate_claim` boundary; each returns a genuine rejection receipt (rule fired, quote-diff/schema error, classification)
+  - [x] Beat-2 honesty: response exposes `extraction.claims`, `extraction.validation`, `extraction.mode`; "Live Gemini Extractor" toggle replaced by an honest status pill ("deterministic fallback — pre-extracted evidence (replay never calls Gemini)")
+  - [x] Extraction prompt enum lists all 4 registry claim_ids
+  - [x] FR-8/FR-18: `citation_warnings` wired into the snapshot path (`store.snapshot()` + `/api/state` + time-travel scrub)
+  - [x] Deleted dead legacy (`scopeshift_core.py`, `event_store.py`, `test_scopeshift_core.py`) — nothing imported them
+  - [x] FR-10: `add_event` sequence assignment is atomic (threading.Lock) + concurrent regression test (16 threads, unique monotonic sequences)
+  - [x] Reset-aware beats: Beat 1 always re-seeds; re-pressing an applied beat returns `already_applied` + hint; stage order documented in `PRESENTER.md`
+  - [x] Docs truth pass: light editorial theme (not "Swiss-Industrial dark"); no BigQuery/Chrome-DevTools-MCP overclaims

@@ -22,16 +22,16 @@ Analyze the provided document and extract structured factual claims related to c
 Output ONLY a JSON array of claim objects matching this schema:
 [
   {
-    "claim_id": "checkout.payment_methods" or "checkout.currency",
+    "claim_id": "checkout.payment_methods" | "checkout.currency" | "auth.mfa_requirement" | "refunds.settlement_sla",
     "observation": "concise factual summary of what the document says or shows",
     "quote": "exact verbatim substring from the text, or text visible in the screenshot",
     "proposed_scope_change": true if this source explicitly states a scope change or override, false otherwise,
-    "value": object describing the claim (e.g. {"methods": ["Card"], "exclusive": false} or {"currency": "INR"}),
+    "value": object describing the claim (e.g. {"methods": ["Card"], "exclusive": false} or {"currency": "INR"} or {"mfa_required": true, "channels": ["TOTP Authenticator"]} or {"sla_hours": 24, "instant_settlement": false}),
     "region": [x, y, width, height] for screenshots (optional for text)
   }
 ]
 Constraints:
-- You must ONLY use the claim_id values: "checkout.payment_methods" or "checkout.currency".
+- You must ONLY use the claim_id values: "checkout.payment_methods", "checkout.currency", "auth.mfa_requirement", "refunds.settlement_sla".
 - The quote MUST be an exact verbatim substring from the document.
 - Only mark proposed_scope_change: true if the text explicitly states scope change.
 """
@@ -47,10 +47,14 @@ class ExtractionResult:
 
 
 class Extractor:
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None,
+                 vertex_extractor=None):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model
+        self.model = model or os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-2.5-flash")
         self._client = None
+        # Vertex AI route (env-gated, import-guarded). Lazily built on first use
+        # when not supplied, so constructing Extractor never needs GCP.
+        self._vertex = vertex_extractor
         if self.api_key:
             try:
                 from google import genai
@@ -58,19 +62,46 @@ class Extractor:
             except Exception:
                 self._client = None
 
+    def _get_vertex(self):
+        if self._vertex is None:
+            try:
+                from .cloud import VertexExtractor
+                self._vertex = VertexExtractor()
+            except Exception:
+                self._vertex = False  # remember the miss
+        return self._vertex or None
+
+    def effective_mode(self) -> str:
+        """Honest extraction route for the status endpoint."""
+        if self._client:
+            return "live"
+        vx = self._get_vertex()
+        if vx is not None and vx.status()["connected"]:
+            return "live (vertex)"
+        return "deterministic-fallback"
+
     def extract_from_text(self, text: str, source_type: str, force_fallback: bool = False) -> ExtractionResult:
         start_time = time.time()
-        if self._client and not force_fallback:
-            try:
-                from google.genai import types
-                prompt = f"{EXTRACTION_PROMPT}\nSource Type: {source_type}\nText:\n{text}"
-                cfg = types.GenerateContentConfig(response_mime_type="application/json")
-                resp = self._client.models.generate_content(model=self.model, contents=[prompt], config=cfg)
-                claims = json.loads(resp.text)
-                latency = (time.time() - start_time) * 1000
-                return ExtractionResult(claims=claims, mode="live", latency_ms=latency, model=self.model, raw_response=resp.text)
-            except Exception:
-                pass  # Fall through to fallback on stage / network error
+        if not force_fallback:
+            # Tier 1 route first: Vertex AI endpoint (same default Gemini model),
+            # env-gated and import-guarded; any failure falls through below.
+            vx = self._get_vertex()
+            if vx is not None and vx.status()["connected"]:
+                res = vx.extract_claims(text, source_type, EXTRACTION_PROMPT)
+                if res is not None:
+                    return ExtractionResult(claims=res["claims"], mode="live",
+                                            latency_ms=res["latency_ms"], model=res["model"])
+            if self._client:
+                try:
+                    from google.genai import types
+                    prompt = f"{EXTRACTION_PROMPT}\nSource Type: {source_type}\nText:\n{text}"
+                    cfg = types.GenerateContentConfig(response_mime_type="application/json")
+                    resp = self._client.models.generate_content(model=self.model, contents=[prompt], config=cfg)
+                    claims = json.loads(resp.text)
+                    latency = (time.time() - start_time) * 1000
+                    return ExtractionResult(claims=claims, mode="live", latency_ms=latency, model=self.model, raw_response=resp.text)
+                except Exception:
+                    pass  # Fall through to fallback on stage / network error
 
         # Deterministic proven fallback
         latency = (time.time() - start_time) * 1000
