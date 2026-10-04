@@ -1078,6 +1078,99 @@
   });
 
   // --------------------------------------------------------------------------
+  // Scenario presets: each step is a real POST /api/ingest through the same
+  // validation boundary as the manual form. Rejections are reported, not hidden.
+  // --------------------------------------------------------------------------
+  const PRESETS = {
+    mfa: [
+      { label: 'Baseline BRD: MFA optional', source_type: 'brd', claim_id: 'auth.mfa_requirement',
+        text: 'REQ-SEC-01: Login uses a password only. MFA is optional for all users.',
+        quote: 'MFA is optional for all users', proposed_scope_change: false,
+        value: { mfa_required: false } },
+      { label: 'Client note: MFA mandated', source_type: 'client_note', claim_id: 'auth.mfa_requirement',
+        text: 'Following the security review, MFA is required for all logins via TOTP and SMS.',
+        quote: 'MFA is required for all logins via TOTP and SMS', proposed_scope_change: true,
+        value: { mfa_required: true, channels: ['TOTP Authenticator', 'SMS OTP'] } },
+    ],
+    currency: [
+      { label: 'Baseline BRD: INR pricing', source_type: 'brd', claim_id: 'checkout.currency',
+        text: 'REQ-PAY-02: All prices are shown and charged in INR.',
+        quote: 'All prices are shown and charged in INR', proposed_scope_change: false,
+        value: { currency: 'INR' } },
+      { label: 'Client note: switch to USD', source_type: 'client_note', claim_id: 'checkout.currency',
+        text: 'For the international launch, checkout currency changes to USD.',
+        quote: 'checkout currency changes to USD', proposed_scope_change: true,
+        value: { currency: 'USD' } },
+    ],
+    hostile: [
+      { label: 'Screenshot claiming scope authority', source_type: 'screenshot', claim_id: 'checkout.payment_methods',
+        text: 'Pay with Card', quote: 'Pay with Card', proposed_scope_change: true,
+        value: { methods: ['Card'] }, region: [460, 285, 370, 80] },
+      { label: 'Note with fabricated quote', source_type: 'client_note', claim_id: 'checkout.payment_methods',
+        text: 'Maybe we could think about Card at some point.', quote: 'Card is approved for v1',
+        proposed_scope_change: true, value: { methods: ['Card'] } },
+      { label: 'Invented claim id', source_type: 'client_note', claim_id: 'checkout.bitcoin',
+        text: 'Please add Bitcoin payments.', quote: 'Please add Bitcoin payments', proposed_scope_change: true,
+        value: { methods: ['Bitcoin'] } },
+    ],
+  };
+
+  const presetLog = document.querySelector('#preset-log');
+
+  async function runPreset(key) {
+    const steps = PRESETS[key];
+    if (!steps || !presetLog) return;
+    document.querySelectorAll('.preset-btn').forEach(b => { b.disabled = true; });
+    presetLog.style.display = 'block';
+    presetLog.innerHTML = '';
+    try {
+      for (const step of steps) {
+        const payload = {
+          source_type: step.source_type,
+          claim_id: step.claim_id,
+          text: step.text,
+          quote: step.quote,
+          observation: step.label,
+          proposed_scope_change: step.proposed_scope_change,
+          value: step.value,
+          region: step.region || null,
+        };
+        let line;
+        try {
+          const res = await fetch('/api/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            appState = data.state;
+            renderAllModules(appState);
+            const ev = data.evidence || {};
+            const authority = ev.governing ? 'can govern' : 'observation only';
+            line = { ok: true, text: `${step.label} \u2192 accepted as ${data.source_id} (${authority}, quote ${ev.quote_verified ? 'verified' : 'unverified'})` };
+          } else {
+            line = { ok: false, text: `${step.label} \u2192 rejected at the boundary: ${data.error?.message || 'validation error'}` };
+          }
+        } catch (err) {
+          line = { ok: false, text: `${step.label} \u2192 request failed: ${err.message}` };
+        }
+        const row = document.createElement('div');
+        row.className = 'preset-log-row ' + (line.ok ? 'ok' : 'blocked');
+        row.textContent = (line.ok ? '\u2713 ' : '\u2298 ') + line.text;
+        presetLog.appendChild(row);
+        await sleep(450);
+      }
+    } finally {
+      document.querySelectorAll('.preset-btn').forEach(b => { b.disabled = false; });
+    }
+  }
+
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => runPreset(btn.getAttribute('data-preset')));
+  });
+
+  // --------------------------------------------------------------------------
   // Module 4: Governed BRD & Diff Viewer
   // --------------------------------------------------------------------------
   function renderGovernedBrd(state) {
@@ -1368,6 +1461,80 @@
         }
       })
       .catch(() => { /* badges keep their muted "local" default */ });
+  }
+
+  // --------------------------------------------------------------------------
+  // Provenance Inspector: side-by-side evidence for the headline claim,
+  // opened by clicking the state banner.
+  // --------------------------------------------------------------------------
+  const PROVENANCE_CLAIM = 'checkout.payment_methods';
+
+  function openProvenanceModal() {
+    if (!artifactModal || !modalBody || !modalTitle || !appState) return;
+    const res = appState.resolutions?.[PROVENANCE_CLAIM];
+    if (!res) return;
+    const active = (appState.sources || []).filter(s => s.claim_id === PROVENANCE_CLAIM && s.active);
+    const typeLabel = { brd: 'Baseline document', screenshot: 'UI observation', client_note: 'Client statement' };
+    const authorityLabel = { brd: 'Baseline only', screenshot: 'Cannot authorize', client_note: 'Can authorize if verified' };
+
+    modalTitle.textContent = `Provenance \u2022 ${res.title || PROVENANCE_CLAIM} \u2022 ${res.state}`;
+
+    const cards = active.map(s => {
+      const region = Array.isArray(s.region) && s.region.length === 4 ? s.region : null;
+      const shot = s.type === 'screenshot'
+        ? `<div class="shot-wrap"><img class="prov-shot" data-sid="${escapeHtml(s.id)}" src="/fixtures/checkout.png" alt="Screenshot ${escapeHtml(s.id)}" style="max-width: 100%; display: block; border-radius: var(--radius-md); border: 1px solid var(--border-light);">${region ? '<div class="shot-region prov-region"></div>' : ''}</div>`
+        : '';
+      const governing = res.governing_source === s.id;
+      return `
+        <div class="prov-card ${governing ? 'prov-governing' : ''}">
+          <div class="prov-card-head">
+            <span class="brand-badge">${escapeHtml(s.id)}</span>
+            <span class="prov-type">${escapeHtml(typeLabel[s.type] || s.type)}</span>
+            <span class="prov-auth">${escapeHtml(authorityLabel[s.type] || '')}</span>
+          </div>
+          ${shot}
+          <p class="prov-quote">&ldquo;${escapeHtml(s.quote)}&rdquo;</p>
+          <p class="prov-meta">${s.quote_verified ? '\u2713 Quote verified against source' : '\u26A0 Quote unverified'}${governing ? ' \u2022 GOVERNING' : ''}</p>
+        </div>`;
+    }).join('');
+
+    modalBody.innerHTML = `
+      <div class="prov-grid">${cards || '<p class="prov-meta">No active evidence for this claim.</p>'}</div>
+      <div class="prov-verdict prov-${escapeHtml(String(res.state).toLowerCase())}">
+        <strong>Resolver verdict: ${escapeHtml(res.state)}</strong>
+        <p>${escapeHtml(res.reason || '')}</p>
+        <p class="prov-invariant">Seeing a button is not approving the button. Only a verified client decision can govern.</p>
+      </div>`;
+    artifactModal.style.display = 'flex';
+
+    // Scale each cited region onto its displayed screenshot.
+    modalBody.querySelectorAll('.prov-shot').forEach(img => {
+      const src = active.find(s => s.id === img.getAttribute('data-sid'));
+      const ov = img.parentElement.querySelector('.prov-region');
+      if (!src || !ov || !Array.isArray(src.region)) return;
+      const place = () => {
+        if (!img.clientWidth) return;
+        const sx = img.clientWidth / (img.naturalWidth || 900);
+        const sy = img.clientHeight / (img.naturalHeight || 620);
+        ov.style.left = (src.region[0] * sx) + 'px';
+        ov.style.top = (src.region[1] * sy) + 'px';
+        ov.style.width = (src.region[2] * sx) + 'px';
+        ov.style.height = (src.region[3] * sy) + 'px';
+      };
+      if (img.complete) place(); else img.addEventListener('load', place);
+    });
+  }
+
+  const stateBannerEl = document.querySelector('#state-banner');
+  if (stateBannerEl) {
+    stateBannerEl.classList.add('state-banner-clickable');
+    stateBannerEl.setAttribute('role', 'button');
+    stateBannerEl.setAttribute('tabindex', '0');
+    stateBannerEl.setAttribute('title', 'Inspect the evidence behind this verdict');
+    stateBannerEl.addEventListener('click', openProvenanceModal);
+    stateBannerEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openProvenanceModal(); }
+    });
   }
 
   // --------------------------------------------------------------------------

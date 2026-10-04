@@ -330,6 +330,25 @@
         <div class="studio-layout-grid">
           <!-- Ingestion Form -->
           <div class="studio-card">
+            <div class="preset-panel" id="preset-panel">
+              <span class="eyebrow-text">Scenario Presets</span>
+              <p class="preset-sub">One click runs a complete scenario through the real validation boundary and event log.</p>
+              <div class="preset-buttons">
+                <button type="button" class="preset-btn" data-preset="mfa">
+                  <strong>Security: MFA mandate</strong>
+                  <span>Baseline says optional, client mandates TOTP + SMS &rarr; GOVERNED</span>
+                </button>
+                <button type="button" class="preset-btn" data-preset="currency">
+                  <strong>Scope change: currency</strong>
+                  <span>Baseline INR, client switches to USD &rarr; GOVERNED</span>
+                </button>
+                <button type="button" class="preset-btn" data-preset="hostile">
+                  <strong>Adversarial injection</strong>
+                  <span>Forged scope, fabricated quote, invented claim &rarr; contained</span>
+                </button>
+              </div>
+              <div class="preset-log" id="preset-log" aria-live="polite" style="display: none;"></div>
+            </div>
             <form id="ingest-form">
               <div class="field-group">
                 <label class="field-label" for="inp-source-type">Source Artifact Medium</label>
