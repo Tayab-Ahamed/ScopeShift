@@ -6,6 +6,7 @@
 > **"Seeing a button is not approving the button."**  
 > Decoupling multi-modal LLM extraction from specification authority through code-level citation proofs and tamper-evident event streaming.
 
+[![Track](https://img.shields.io/badge/Commudle%20Phase%202-Problem%20Statement%2042%20(P42)-orange?style=flat-square)](#problem-statement-alignment-p42)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/Tests-90%2F90%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-Fail--Closed%20Deterministic-blueviolet?style=flat-square)](#the-governed-pipeline)
@@ -29,6 +30,11 @@ Modern software teams and autonomous AI coding agents face a critical drift vuln
 1. **Extraction is decoupled from authority:** Multi-modal foundation models (Gemini 2.5 Flash / Vertex AI) extract structured claims, but are never permitted to make governance decisions.
 2. **Code enforces citation integrity:** Every cited quote must match verbatim in the source document. Every UI screenshot must fall within physical bounding boxes. Dangling or hallucinated citations fail closed.
 3. **Deterministic resolution:** Requirements advance into the published Business Requirements Document (BRD) strictly when an authorized, verified client decision explicitly mandates them.
+
+### Problem Statement Alignment (P42)
+
+> **Challenge Track:** Commudle HackSprint Phase 2 &bull; **Problem Statement 42 (P42)**  
+> **Core Objective:** Build a deterministic, evidence-governed requirements system that halts autonomous AI drift, eliminates hallucinated citations, and prevents unauthorized observations from altering software specifications without cryptographically verifiable client authority.
 
 ---
 
