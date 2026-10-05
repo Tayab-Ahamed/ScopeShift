@@ -8,11 +8,11 @@
 
 [![Track](https://img.shields.io/badge/Commudle%20Phase%202-Problem%20Statement%2042%20(P42)-orange?style=flat-square)](#problem-statement-alignment-p42)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-90%2F90%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-116%2F116%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-Fail--Closed%20Deterministic-blueviolet?style=flat-square)](#the-governed-pipeline)
 [![Audit](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash--Chained-success?style=flat-square)](#immutable-event-ledger)
 [![Cloud Mirrors](https://img.shields.io/badge/Cloud%20Dual--Write-BigQuery%20%7C%20GCS%20%7C%20Vertex-informational?style=flat-square&logo=googlecloud&logoColor=white)](#enterprise-cloud-architecture)
-[![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
 <br/>
 
@@ -145,14 +145,20 @@ Check connection status at any time via `GET /api/cloud/status` or the live back
 ---
 
 ## Test Architecture
-
+ 
 | Test Module | Coverage Scope |
 |---|---|
 | [`tests/test_core.py`](tests/test_core.py) | Domain claim registries, schema validators, invariant rules, and deterministic state transitions. |
 | [`tests/test_store.py`](tests/test_store.py) | Monotonic sequence assignment, SHA-256 hash chains, trigger guards, and concurrent race integrity. |
-| [`tests/test_extraction.py`](tests/test_extraction.py) | Multi-modal claim extraction, verbatim quote substring proofs, and coordinate bounding boundary checks. |
-| [`tests/test_api.py`](tests/test_api.py) | REST endpoint validation, adversarial payload rejection receipts, stage progression, and security headers. |
-| [`tests/test_cloud.py`](tests/test_cloud.py) | Graceful cloud fallback, offline no-op mirrors, honest connection diagnostics, and signed URL generation. |
+| [`tests/test_extraction.py`](tests/test_extraction.py) | Structured Gemini schemas, retry with backoff, hallucinated claim_id rejection, and offline deterministic fallback. |
+| [`tests/test_api.py`](tests/test_api.py) | `/api/extract` multipart/base64 ingestion, receipts, route reporting, and server configuration. |
+| [`tests/test_screenshot.py`](tests/test_screenshot.py) | Real PNG/JPEG image dimension headers, Pillow crop transcription, and fail-closed quote verification. |
+| [`tests/test_approvers.py`](tests/test_approvers.py) | Approver allowlist (`approvers.json`), sender authentication, and non-authorized sender demotion. |
+| [`tests/test_cloud.py`](tests/test_cloud.py) | `google-genai` Vertex AI adapter, BigQuery read-back, GCS artifact upload, and signed URL generation. |
+| [`tests/test_benchmark.py`](tests/test_benchmark.py) | ScopeShift vs Plain Gemini benchmark harness and fail-closed missing key handling. |
+| [`tests/test_citation_enforcement.py`](tests/test_citation_enforcement.py) | Verbatim citation verification and fail-closed rejection of unverified evidence. |
+| [`tests/test_scenarios.py`](tests/test_scenarios.py) | End-to-end multi-beat scenario tests with replay state projections. |
+| [`tests/test_ask.py`](tests/test_ask.py) | Natural language Q&A verification grounded strictly in governed claims. |
 
 ---
 

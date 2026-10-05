@@ -34,26 +34,35 @@ The response shows the extraction outcome: claims, per-claim validation, and the
 
 ## Chaos tiles (page 5, "Adversarial Stress Test Suite")
 
-Three real attacks, each executed through the actual `validate_claim` boundary — nothing canned:
+Five real attacks, each executed through the actual `validate_claim` code boundary — nothing canned:
 
-| Tile | Attack | Rule that fires |
-|------|--------|-----------------|
-| TEST 1 Forged Screenshot | screenshot with `proposed_scope_change=true` | Boundary forces it to `false` — screenshots can NEVER govern |
-| TEST 2 Vague Note | "Maybe consider Card?" with an unverifiable quote | Quote verification fails → classified OBSERVATION only |
-| TEST 3 Hallucinated Claim ID | `checkout.bitcoin` | Schema enum rejects it before the event log |
+| Tile | Attack | Rule that fires | Code Defense |
+|------|--------|-----------------|--------------|
+| **TEST 1 Forged Screenshot** | screenshot with `proposed_scope_change=true` | Invariant: screenshots can NEVER govern | Boundary forces `proposed_scope_change=False` |
+| **TEST 2 Vague Note** | "Maybe consider Card?" with an unverifiable quote | Verbatim quote proof (NFKC normalized) | `quote_verified=False` &rarr; classified OBSERVATION only |
+| **TEST 3 Rogue Currency** | `checkout.bitcoin` outside schema enum | Frozen schema enum check | Rejected with `ValidationError` before the event log |
+| **TEST 4 Forged Sender** | Valid quote from unauthorized sender "Mallory" | Approver allowlist check (`approvers.json`) | Demoted to OBSERVATION only ("sender not authorised") |
+| **TEST 5 Fabricated Screenshot Text** | Image crop text does not match submitted quote | Separate crop transcription verification | `quote_verified=False` &rarr; classified OBSERVATION only |
 
-The toast shows the rule fired + resulting classification for each. Point at it: *"The attacker
-never reaches the log — the code boundary intercepts them first."*
+The toast and audit panel show the exact rule that fired + resulting classification for each attack. Point at it: *"The attacker never reaches the governed BRD — the code boundary intercepts and neutralizes them first."*
+
+## Route Indicator & Cloud Status
+
+The header route pill reports the true operational route:
+- **`live-gemini`**: Direct Google Gemini API extraction (`GEMINI_API_KEY` present)
+- **`live-vertex`**: Vertex AI endpoint extraction via `google-genai` SDK (`vertexai=True`)
+- **`offline`**: Deterministic offline fallback (exact SHA-256 fixture match; unknown input returns 0 claims)
+
+If a live extractor fails, the pill displays the exact `last_failure_reason`.
 
 ## Recovery
 
-- **Wrong order / double-press:** you get a "no-op" toast with the hint. Press **1** to re-seed,
-  then continue 1 → 2 → 3.
+- **Wrong order / double-press:** you get a "no-op" toast with the hint. Press **1** to re-seed, then continue 1 → 2 → 3.
 - **Something looks off:** the **Reset** button (or POST `/api/demo/reset`) rebuilds the seed.
 - **Time-travel scrubber** (page 5): drag to any sequence number to replay the exact historical state.
 
-## Lines to avoid on stage
+## Truth in Presentation (Lines to remember)
 
-- ❌ "Live Gemini extraction" (unless `GEMINI_API_KEY` is actually set)
-- ❌ "BigQuery" (the append-only log in this demo is SQLite)
-- ❌ "The AI decided" — always: *"Gemini proposes claims; code validates citations and decides authority."*
+- ❌ Never claim live extraction when running offline — point to the route indicator pill.
+- ❌ Never claim model approval — always: *"Gemini proposes claims; code validates citations and decides authority."*
+- ❌ Never claim benchmark results without running: `python benchmark/run_benchmark.py`
