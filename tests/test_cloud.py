@@ -276,6 +276,43 @@ def test_vertex_extractor_mocked_genai(monkeypatch):
     assert cfg.response_schema == list[ClaimExtractionSchema]
 
 
+def test_vertex_extractor_404_fallback(monkeypatch):
+    from unittest.mock import MagicMock
+    from scopeshift.cloud import VertexExtractor
+
+    vx = VertexExtractor(model="gemini-3.6-flash", fallbacks=["gemini-3.5-flash"])
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = json.dumps([
+        {
+            "claim_id": "checkout.currency",
+            "observation": "INR currency",
+            "quote": "REQ-CUR-01: INR",
+            "proposed_scope_change": False,
+            "currency": "INR",
+        }
+    ])
+
+    def side_effect(*args, **kwargs):
+        m = kwargs.get("model")
+        if m == "gemini-3.6-flash":
+            raise Exception("404 models/gemini-3.6-flash not found")
+        elif m == "gemini-3.5-flash":
+            return mock_resp
+        raise RuntimeError(f"Unexpected: {m}")
+
+    mock_client.models.generate_content.side_effect = side_effect
+    monkeypatch.setattr(vx, "_client", mock_client)
+    monkeypatch.setattr(vx, "_connected", True)
+
+    res = vx.extract_claims("sample text", "brd", "Test prompt")
+    assert res is not None
+    assert "gemini-3.5-flash" in res["model"]
+    assert len(res["claims"]) == 1
+    assert res["claims"][0]["value"] == {"currency": "INR"}
+    assert mock_client.models.generate_content.call_count == 2
+
+
 def test_bigquery_verify_read_back(monkeypatch):
     from unittest.mock import MagicMock
     from scopeshift.cloud import BigQueryLog

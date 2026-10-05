@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .claims import CLAIM_IDS
 
@@ -30,13 +30,115 @@ CLAIM_ID_LITERAL = Literal[
 ]
 
 
+def is_model_unavailable_error(exc: Exception) -> bool:
+    """Detect if an error is a 404 or model unavailable error indicating model failover."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if code == 404:
+        return True
+    msg = str(exc).lower()
+    patterns = [
+        "404",
+        "not found",
+        "not_found",
+        "model no longer available",
+        "is not found for api version",
+        "unknown model",
+        "model not found",
+        "does not exist",
+    ]
+    return any(p in msg for p in patterns)
+
+
 class ClaimExtractionSchema(BaseModel):
+    model_config = {"extra": "allow"}
+
     claim_id: CLAIM_ID_LITERAL = Field(description="Must be one of the registered claim IDs")
     observation: str = Field(default="", description="Concise factual summary of what the document says or shows")
     quote: str = Field(description="Exact verbatim substring from the text, or text visible in the screenshot")
     proposed_scope_change: bool = Field(description="True if this source explicitly states a scope change or override, false otherwise")
-    value: dict[str, Any] = Field(description="Typed object describing the claim")
+    methods: Optional[list[str]] = Field(default=None, description="Payment methods list, e.g. ['Card'], ['Card', 'UPI']")
+    currency: Optional[str] = Field(default=None, description="3-letter currency code, e.g. 'INR', 'USD'")
+    required_factors: Optional[list[str]] = Field(default=None, description="MFA factors or channels, e.g. ['TOTP Authenticator']")
+    sla_days: Optional[int] = Field(default=None, description="Refund settlement SLA in days")
+    value_json: Optional[str] = Field(default=None, description="Optional raw JSON string for the claim value object")
     region: Optional[list[int]] = Field(default=None, description="[x, y, width, height] for screenshots (optional for text)")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_values(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            val = data.get("value")
+            if isinstance(val, dict):
+                if "methods" in val and not data.get("methods"):
+                    data["methods"] = val["methods"]
+                if "currency" in val and not data.get("currency"):
+                    data["currency"] = val["currency"]
+                if "required_factors" in val and not data.get("required_factors"):
+                    data["required_factors"] = val["required_factors"]
+                elif "channels" in val and not data.get("required_factors"):
+                    data["required_factors"] = val["channels"]
+                if "sla_days" in val and not data.get("sla_days"):
+                    data["sla_days"] = val["sla_days"]
+                elif "sla_hours" in val and not data.get("sla_days"):
+                    try:
+                        data["sla_days"] = max(1, int(val["sla_hours"]) // 24)
+                    except Exception:
+                        pass
+                if not data.get("value_json"):
+                    try:
+                        data["value_json"] = json.dumps(val)
+                    except Exception:
+                        pass
+            elif isinstance(val, str) and not data.get("value_json"):
+                data["value_json"] = val
+        return data
+
+    def to_claim_dict(self) -> dict:
+        """Convert schema instance into claim dict with a normalized 'value' object for validation."""
+        d = self.model_dump()
+
+        val_dict: dict[str, Any] = {}
+        # 1. First check if incoming extra has 'value' dict
+        extra_val = getattr(self, "__pydantic_extra__", {}) or {}
+        raw_v = extra_val.get("value")
+        if isinstance(raw_v, dict):
+            val_dict = dict(raw_v)
+        elif isinstance(raw_v, str):
+            try:
+                p = json.loads(raw_v)
+                if isinstance(p, dict):
+                    val_dict = p
+            except Exception:
+                pass
+
+        # 2. If value_json is provided and valid JSON dict
+        if not val_dict and self.value_json:
+            try:
+                p = json.loads(self.value_json)
+                if isinstance(p, dict):
+                    val_dict = p
+            except Exception:
+                pass
+
+        # 3. Populate from explicit typed fields based on claim_id
+        if not val_dict:
+            if self.claim_id == "checkout.payment_methods":
+                if self.methods is not None:
+                    val_dict["methods"] = self.methods
+            elif self.claim_id == "checkout.currency":
+                if self.currency is not None:
+                    val_dict["currency"] = self.currency
+            elif self.claim_id == "auth.mfa_requirement":
+                val_dict["mfa_required"] = True
+                if self.required_factors is not None:
+                    val_dict["channels"] = self.required_factors
+            elif self.claim_id == "refunds.settlement_sla":
+                if self.sla_days is not None:
+                    val_dict["sla_hours"] = int(self.sla_days) * 24
+                    val_dict["instant_settlement"] = False
+
+        d["value"] = val_dict
+        return d
 
 
 EXTRACTION_PROMPT = """You are an evidence extraction assistant for ScopeShift.
@@ -49,7 +151,11 @@ Output ONLY a JSON array of claim objects matching this schema:
     "observation": "concise factual summary of what the document says or shows",
     "quote": "exact verbatim substring from the text, or text visible in the screenshot",
     "proposed_scope_change": true if this source explicitly states a scope change or override, false otherwise,
-    "value": object describing the claim (e.g. {"methods": ["Card"], "exclusive": false} or {"currency": "INR"} or {"mfa_required": true, "channels": ["TOTP Authenticator"]} or {"sla_hours": 24, "instant_settlement": false}),
+    "methods": ["Card"] or ["Card", "UPI"] (for checkout.payment_methods),
+    "currency": "INR" or "USD" (for checkout.currency),
+    "required_factors": ["TOTP Authenticator"] (for auth.mfa_requirement),
+    "sla_days": 1 or 2 (for refunds.settlement_sla),
+    "value_json": optional JSON string of the value payload (e.g. "{\\"methods\\": [\\"Card\\"]}"),
     "region": [x, y, width, height] for screenshots (optional for text)
   }
 ]
@@ -263,11 +369,17 @@ class Extractor:
         self,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        fallbacks: Optional[list[str]] = None,
         vertex_extractor=None,
         retry_delay_base: float = 0.05,
     ):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        self.model = model or os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = model or os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-3.6-flash")
+        if fallbacks is not None:
+            self.fallbacks = list(fallbacks)
+        else:
+            fb_env = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS", "gemini-3.5-flash")
+            self.fallbacks = [m.strip() for m in fb_env.split(",") if m.strip()]
         self.retry_delay_base = retry_delay_base
         self._client = None
         self._vertex = vertex_extractor
@@ -315,36 +427,75 @@ class Extractor:
             self.last_failure_reason = res.reason
         return res
 
+    def _candidate_models(self) -> list[str]:
+        models = [self.model]
+        for fb in self.fallbacks:
+            if fb != self.model and fb not in models:
+                models.append(fb)
+        return models
+
     def _call_gemini_with_retry(
         self, contents: list, config
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        """Calls Gemini client with up to 3 tries and exponential backoff.
-        Returns (raw_response_text, failure_reason, error_type).
+    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """Calls Gemini client with fallback models on 404/unavailable and exponential backoff.
+        Returns (raw_response_text, failure_reason, error_type, answering_model).
         """
+        candidates = self._candidate_models()
         last_exc: Optional[Exception] = None
-        for attempt in range(1, 4):
-            try:
-                resp = self._client.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=config,
-                )
-                text = getattr(resp, "text", None) or ""
-                return text, None, None
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(
-                    "Gemini extraction attempt %d/3 failed: %s (%s)",
-                    attempt,
-                    exc,
-                    type(exc).__name__,
-                )
-                if attempt < 3:
-                    time.sleep(self.retry_delay_base * (2 ** (attempt - 1)))
 
-        reason = f"Gemini call failed after 3 tries: {type(last_exc).__name__}: {last_exc}"
+        for model_idx, current_model in enumerate(candidates):
+            model_unavailable = False
+            for attempt in range(1, 4):
+                try:
+                    resp = self._client.models.generate_content(
+                        model=current_model,
+                        contents=contents,
+                        config=config,
+                    )
+                    text = getattr(resp, "text", None) or ""
+                    logger.info("Gemini extraction succeeded using model: %s", current_model)
+                    return text, None, None, current_model
+                except Exception as exc:
+                    last_exc = exc
+                    if is_model_unavailable_error(exc):
+                        model_unavailable = True
+                        next_model = (
+                            candidates[model_idx + 1]
+                            if model_idx + 1 < len(candidates)
+                            else None
+                        )
+                        if next_model:
+                            logger.warning(
+                                "Gemini model %s unavailable (%s). Failing over to fallback model %s...",
+                                current_model,
+                                exc,
+                                next_model,
+                            )
+                        else:
+                            logger.warning(
+                                "Gemini model %s unavailable (%s) and no further fallbacks available.",
+                                current_model,
+                                exc,
+                            )
+                        break
+
+                    logger.warning(
+                        "Gemini model %s extraction attempt %d/3 failed: %s (%s)",
+                        current_model,
+                        attempt,
+                        exc,
+                        type(exc).__name__,
+                    )
+                    if attempt < 3:
+                        time.sleep(self.retry_delay_base * (2 ** (attempt - 1)))
+
+            # If failure was not due to 404/unavailable model, do not fail over to fallback models
+            if not model_unavailable:
+                break
+
+        reason = f"Gemini call failed after retries: {type(last_exc).__name__}: {last_exc}"
         error_type = type(last_exc).__name__ if last_exc else "GeminiError"
-        return None, reason, error_type
+        return None, reason, error_type, None
 
     def _parse_and_validate_claims(
         self, raw_text: str
@@ -378,7 +529,7 @@ class Extractor:
                 continue
             try:
                 model_item = ClaimExtractionSchema.model_validate(item)
-                valid_claims.append(model_item.model_dump())
+                valid_claims.append(model_item.to_claim_dict())
             except Exception as exc:
                 errors.append(f"Validation error on {cid}: {exc}")
                 logger.warning("Claim validation failed for %s: %s", cid, exc)
@@ -426,7 +577,7 @@ class Extractor:
                     response_mime_type="application/json",
                     response_schema=list[ClaimExtractionSchema],
                 )
-                raw_text, call_reason, call_error_type = self._call_gemini_with_retry(
+                raw_text, call_reason, call_error_type, answering_model = self._call_gemini_with_retry(
                     [prompt], cfg
                 )
                 latency = (time.time() - start_time) * 1000
@@ -438,7 +589,7 @@ class Extractor:
                         claims=claims,
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         raw_response=raw_text,
                         reason=val_reason,
                         error_type=val_error_type,
@@ -448,7 +599,7 @@ class Extractor:
                         claims=[],
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         reason=call_reason,
                         error_type=call_error_type,
                     )
@@ -512,7 +663,7 @@ class Extractor:
                     response_mime_type="application/json",
                     response_schema=list[ClaimExtractionSchema],
                 )
-                raw_text, call_reason, call_error_type = self._call_gemini_with_retry(
+                raw_text, call_reason, call_error_type, answering_model = self._call_gemini_with_retry(
                     [prompt, img_part], cfg
                 )
                 latency = (time.time() - start_time) * 1000
@@ -524,7 +675,7 @@ class Extractor:
                         claims=claims,
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         raw_response=raw_text,
                         reason=val_reason,
                         error_type=val_error_type,
@@ -534,7 +685,7 @@ class Extractor:
                         claims=[],
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         reason=call_reason,
                         error_type=call_error_type,
                     )
@@ -590,7 +741,7 @@ class Extractor:
                     response_mime_type="application/json",
                     response_schema=list[ClaimExtractionSchema],
                 )
-                raw_text, call_reason, call_error_type = self._call_gemini_with_retry(
+                raw_text, call_reason, call_error_type, answering_model = self._call_gemini_with_retry(
                     [prompt, pdf_part], cfg
                 )
                 latency = (time.time() - start_time) * 1000
@@ -602,7 +753,7 @@ class Extractor:
                         claims=claims,
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         raw_response=raw_text,
                         reason=val_reason,
                         error_type=val_error_type,
@@ -612,7 +763,7 @@ class Extractor:
                         claims=[],
                         mode="live",
                         latency_ms=latency,
-                        model=self.model,
+                        model=answering_model or self.model,
                         reason=call_reason,
                         error_type=call_error_type,
                     )

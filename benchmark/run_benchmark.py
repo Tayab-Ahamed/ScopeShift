@@ -121,7 +121,6 @@ def run_plain_gemini_call(client, model_name: str, prompt: str) -> dict:
 
     cfg = types.GenerateContentConfig(
         response_mime_type="application/json",
-        temperature=0.2,
     )
     resp = client.models.generate_content(
         model=model_name,
@@ -376,7 +375,7 @@ def main():
         },
     }
 
-    model_name = os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-3.6-flash")
 
     for i in range(n):
         print(f" Iteration {i+1}/{n}...")

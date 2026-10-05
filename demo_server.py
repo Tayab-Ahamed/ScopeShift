@@ -134,12 +134,24 @@ def _make_crop_transcriber():
     if EXTRACTOR._client:
         def transcriber(crop_bytes: bytes) -> str:
             from google.genai import types
+            from scopeshift.extraction import is_model_unavailable_error
             part = types.Part.from_bytes(data=crop_bytes, mime_type="image/png")
             prompt = "Return only the visible text inside this image crop verbatim."
-            resp = EXTRACTOR._client.models.generate_content(
-                model=EXTRACTOR.model, contents=[prompt, part]
-            )
-            return getattr(resp, "text", "") or ""
+            candidates = [EXTRACTOR.model] + [m for m in EXTRACTOR.fallbacks if m != EXTRACTOR.model]
+            for m in candidates:
+                try:
+                    resp = EXTRACTOR._client.models.generate_content(
+                        model=m, contents=[prompt, part]
+                    )
+                    text = getattr(resp, "text", "") or ""
+                    log.info("Crop transcriber succeeded using model: %s", m)
+                    return text
+                except Exception as exc:
+                    if is_model_unavailable_error(exc) and m != candidates[-1]:
+                        log.warning("Transcriber model %s unavailable (%s). Retrying with fallback...", m, exc)
+                        continue
+                    log.warning("Transcriber failed on model %s: %s", m, exc)
+            return ""
         return transcriber
     return None
 

@@ -15,7 +15,7 @@ In accordance with ScopeShift Non-Negotiable Rules:
 |:---:|:---|:---|:---|:---|:---:|
 | 1 | **Gemini proposes, code decides:** model output cannot grant authority; visual UI observations cannot alter BRD | [`scopeshift/validation.py`](scopeshift/validation.py), [`scopeshift/models.py`](scopeshift/models.py) | `test_screenshot_observation_never_governs` in [`tests/test_core.py`](tests/test_core.py) | `pytest tests/test_core.py -k test_screenshot_observation_never_governs` | **DONE** |
 | 2 | **Fail-closed boundary:** verification failures permanently store claims as unverified; unverified claims never govern | [`scopeshift/models.py`](scopeshift/models.py), [`scopeshift/validation.py`](scopeshift/validation.py) | `tests/test_citation_enforcement.py` & `test_verifier_outage_fails_closed` in [`tests/test_screenshot.py`](tests/test_screenshot.py) | `pytest tests/test_citation_enforcement.py tests/test_screenshot.py` | **DONE** |
-| 3 | **Real Gemini structured extraction:** passes `response_schema` and `response_mime_type="application/json"` on every call | [`scopeshift/extraction.py`](scopeshift/extraction.py), [`scopeshift/cloud.py`](scopeshift/cloud.py) | `test_extractor_schema_passed_to_gemini` in [`tests/test_extraction.py`](tests/test_extraction.py) & `test_vertex_extractor_mocked_genai` in [`tests/test_cloud.py`](tests/test_cloud.py) | `pytest tests/test_extraction.py tests/test_cloud.py` | **DONE** |
+| 3 | **Real Gemini structured extraction:** `gemini-3.6-flash` default, `gemini-3.5-flash` 404 fallback, typed schema fields (`methods`, `currency`, `required_factors`, `sla_days`), no temperature/top_p/top_k | [`scopeshift/extraction.py`](scopeshift/extraction.py), [`scopeshift/cloud.py`](scopeshift/cloud.py) | `test_mock_gemini_404_fallback_model`, `test_claim_extraction_schema_typed_fields_conversion`, `test_vertex_extractor_404_fallback` | `pytest tests/test_extraction.py tests/test_cloud.py` | **DONE** |
 | 4 | **Multi-modal ingestion:** supports raw text, PDF bytes (with pypdf fallback), and images with dynamic MIME header detection | [`scopeshift/extraction.py`](scopeshift/extraction.py) | `test_extractor_pdf_bytes_modality`, `test_extractor_image_bytes_modality`, `test_detect_image_mime` in [`tests/test_extraction.py`](tests/test_extraction.py) | `pytest tests/test_extraction.py` | **DONE** |
 | 5 | **Structured failure reasons & retries:** replaced silent exceptions with `reason`/`error_type` and exponential backoff retry (3 tries) | [`scopeshift/extraction.py`](scopeshift/extraction.py) | `test_extractor_retry_on_timeout`, `test_extractor_bad_json_handling` in [`tests/test_extraction.py`](tests/test_extraction.py) | `pytest tests/test_extraction.py` | **DONE** |
 | 6 | **Deterministic fallback integrity:** canned claims only for exact demo fixtures matched by SHA-256; unknown inputs return 0 claims | [`scopeshift/extraction.py`](scopeshift/extraction.py) | `test_extractor_fallback_canned_for_known_hash`, `test_extractor_fallback_zero_for_unknown_input` in [`tests/test_extraction.py`](tests/test_extraction.py) | `pytest tests/test_extraction.py` | **DONE** |
@@ -36,6 +36,7 @@ In accordance with ScopeShift Non-Negotiable Rules:
 | 21 | **Environment HOST & PORT resolution:** server reads `HOST` and `PORT` from environment (`0.0.0.0` in container, `127.0.0.1` locally) | [`demo_server.py`](demo_server.py) | `test_server_reads_host_and_port_env` in [`tests/test_api.py`](tests/test_api.py) | `pytest tests/test_api.py -k test_server_reads_host_and_port_env` | **DONE** |
 | 22 | **Containerization & Cloud Run guide:** Dockerfile with python-slim, non-root user `scopeshift`, `/api/health` healthcheck, `.dockerignore`, `deploy/cloudrun.md` | [`Dockerfile`](Dockerfile), [`.dockerignore`](.dockerignore), [`deploy/cloudrun.md`](deploy/cloudrun.md) | Verified Dockerfile, `.dockerignore`, and Cloud Run guide | `docker build -t scopeshift .` | **DONE** |
 | 23 | **Default persistence:** `SCOPESHIFT_DB` defaults to `./events.db`, `/api/health` reports `{"persisted": true}` | [`demo_server.py`](demo_server.py), [`scopeshift/store.py`](scopeshift/store.py) | `test_health_endpoint` in [`tests/test_api.py`](tests/test_api.py) | `pytest tests/test_api.py -k test_health_endpoint` | **DONE** |
+| 24 | **Live smoke test probe:** `scripts/smoke_live.py` executes live text, PDF, and image extractions, prints model used, fails closed non-zero without API key | [`scripts/smoke_live.py`](scripts/smoke_live.py) | `test_smoke_live_script_fails_without_api_key` in [`tests/test_extraction.py`](tests/test_extraction.py) | `python scripts/smoke_live.py` | **DONE** |
 
 ---
 
@@ -46,6 +47,10 @@ In accordance with project integrity constraints:
   - Status: **BLOCKED ON CREDENTIALS**
   - Reason: `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_CLOUD_PROJECT` are not configured in this local environment.
   - Verification: `python scripts/verify_cloud.py` correctly identified all missing variables and exited with code `1` rather than faking a PASS.
+- **Live Gemini Extraction Smoke Probe (`scripts/smoke_live.py`):**
+  - Status: **BLOCKED ON CREDENTIALS**
+  - Reason: `GEMINI_API_KEY` is not present in this local environment.
+  - Verification: `python scripts/smoke_live.py` correctly identified missing `GEMINI_API_KEY`, printed required action, and exited with code `1`.
 - **Live Gemini Benchmark Execution (`benchmark/results.json`, `benchmark/results.md`):**
   - Status: **BLOCKED ON CREDENTIALS**
   - Reason: `GEMINI_API_KEY` is not present in this local environment.

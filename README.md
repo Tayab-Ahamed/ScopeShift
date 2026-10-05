@@ -27,7 +27,7 @@
 Modern software teams and autonomous AI coding agents face a critical drift vulnerability: **unauthorized visual scope creep**. When an engineering staging UI, mock, or chat snippet introduces a feature, current AI tools silently bake it into requirements specifications—treating mere visual observation as stakeholder approval.
 
 **ScopeShift establishes a strict, verifiable boundary:**
-1. **Extraction is decoupled from authority:** Multi-modal foundation models (Gemini 2.5 Flash / Vertex AI) extract structured claims, but are never permitted to make governance decisions.
+1. **Extraction is decoupled from authority:** Multi-modal foundation models (Gemini 3.6 Flash / Vertex AI with automatic fallback to Gemini 3.5 Flash) extract structured claims, but are never permitted to make governance decisions.
 2. **Code enforces citation integrity:** Every cited quote must match verbatim in the source document. Every UI screenshot must fall within physical bounding boxes. Dangling or hallucinated citations fail closed.
 3. **Deterministic resolution:** Requirements advance into the published Business Requirements Document (BRD) strictly when an authorized, verified client decision explicitly mandates them.
 
@@ -100,7 +100,7 @@ ScopeShift is fail-closed and works completely offline without network or creden
 | Component | Offline Mode (Default / No Credentials) | Live Mode (With API Key & GCP Credentials) |
 |---|---|---|
 | **Event Ledger & Hash Chain** | Live SQLite (`./events.db`) append-only monotonic SHA-256 chain | Live SQLite + dual-write streaming mirror to Google BigQuery |
-| **Claim Ingestion & Validation** | Deterministic code validation gate; SHA-256 verified fixtures for demo replay | Google Gemini API (`GEMINI_API_KEY`) or Vertex AI (`google-genai` SDK with `vertexai=True`) |
+| **Claim Ingestion & Validation** | Deterministic code validation gate; SHA-256 verified fixtures for demo replay | Google Gemini API (`GEMINI_API_KEY`, default: `gemini-3.6-flash`, fallback: `gemini-3.5-flash`) or Vertex AI (`google-genai` SDK with `vertexai=True`) |
 | **Screenshot Verification** | Real image header dimensions + bounding check; verifier fails closed without model | Pillow crop + separate Gemini transcription call + code-level string match |
 | **Approver Governance** | `approvers.json` allowlist validation; untrusted senders demoted to observations | Same: cryptographic audit log with sender, channel, and timestamp |
 | **Artifact Storage** | Local file serving (`/fixtures/*`) | Google Cloud Storage (GCS) upload + signed URLs |
@@ -120,18 +120,32 @@ Open **`http://localhost:8765`** in your browser.
 - **Keyboard Shortcuts:** Press `1`, `2`, or `3` to instantly step through the 3 governance stages.
 - **Automated Walkthrough:** Click `▶ Automated Walkthrough` in the header for a timed automated walkthrough.
 
-### Run the Test Suite
-The complete test suite runs with zero external dependencies:
+### Verification & Smoke Scripts
+The test suite runs with zero external dependencies (fail-closed, 100% offline):
 ```bash
 python -m pytest -q
 ```
 
-### Optional Enterprise Cloud Dual-Write
-ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional GCP integrations activate automatically when environment variables and credentials are present:
+When `GEMINI_API_KEY` is available, verify live multimodal extraction (text, PDF, image) and model fallback:
+```bash
+python scripts/smoke_live.py
+```
+
+To verify Google Cloud service connectivity (Vertex AI, Cloud Storage, BigQuery):
+```bash
+python scripts/verify_cloud.py
+```
+
+### Optional Live Configuration
+ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional live Gemini and GCP integrations activate automatically when environment variables are present:
 
 ```bash
-# Set configuration variables
+# Gemini model settings (defaults to gemini-3.6-flash, fallback: gemini-3.5-flash)
 export GEMINI_API_KEY="your-gemini-api-key"
+export SCOPESHIFT_GEMINI_MODEL="gemini-3.6-flash"
+export SCOPESHIFT_GEMINI_FALLBACKS="gemini-3.5-flash"
+
+# Google Cloud Platform settings
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
 export SCOPESHIFT_BQ_DATASET="scopeshift_audit"
 export SCOPESHIFT_GCS_BUCKET="scopeshift-artifacts"
@@ -150,7 +164,7 @@ Check connection status at any time via `GET /api/cloud/status` or the live back
 |---|---|
 | [`tests/test_core.py`](tests/test_core.py) | Domain claim registries, schema validators, invariant rules, and deterministic state transitions. |
 | [`tests/test_store.py`](tests/test_store.py) | Monotonic sequence assignment, SHA-256 hash chains, trigger guards, and concurrent race integrity. |
-| [`tests/test_extraction.py`](tests/test_extraction.py) | Structured Gemini schemas, retry with backoff, hallucinated claim_id rejection, and offline deterministic fallback. |
+| [`tests/test_extraction.py`](tests/test_extraction.py) | Structured Gemini schemas (gemini-3.6-flash default, gemini-3.5-flash fallback, typed fields), 404 retry, hallucinated claim_id rejection, and deterministic fallback. |
 | [`tests/test_api.py`](tests/test_api.py) | `/api/extract` multipart/base64 ingestion, receipts, route reporting, and server configuration. |
 | [`tests/test_screenshot.py`](tests/test_screenshot.py) | Real PNG/JPEG image dimension headers, Pillow crop transcription, and fail-closed quote verification. |
 | [`tests/test_approvers.py`](tests/test_approvers.py) | Approver allowlist (`approvers.json`), sender authentication, and non-authorized sender demotion. |
@@ -166,7 +180,7 @@ Check connection status at any time via `GET /api/cloud/status` or the live back
 
 - **Backend:** Python 3 (standard library `http.server`, `sqlite3`, `hashlib`, `json`, `dataclasses`).
 - **Frontend:** Vanilla modern ES6+, CSS Custom Properties, Canvas 2D sparklines, Three.js 3D spatial twin. Zero frontend build steps.
-- **Extraction Model:** Google Gemini / Vertex AI structured outputs with deterministic fallback pipeline.
+- **Extraction Model:** Google Gemini 3.6 Flash / Vertex AI structured outputs with Gemini 3.5 Flash failover and deterministic fallback pipeline.
 - **Storage:** Atomic SQLite append-only log with optional Google BigQuery streaming dual-write and Google Cloud Storage artifact storage.
 - **Design Language:** Light technical editorial canvas, Newsreader & Inter typography, WCAG AA compliant contrast.
 

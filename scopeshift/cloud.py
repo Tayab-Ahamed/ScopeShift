@@ -293,11 +293,17 @@ class VertexExtractor:
         self,
         project: Optional[str] = None,
         location: Optional[str] = None,
-        model: str = "gemini-2.5-flash",
+        model: Optional[str] = None,
+        fallbacks: Optional[list[str]] = None,
     ):
         self.project = project or os.environ.get(GCP_PROJECT_ENV)
         self.location = location or os.environ.get(GCP_LOCATION_ENV)
-        self.model = model
+        self.model = model or os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-3.6-flash")
+        if fallbacks is not None:
+            self.fallbacks = list(fallbacks)
+        else:
+            fb_env = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS", "gemini-3.5-flash")
+            self.fallbacks = [m.strip() for m in fb_env.split(",") if m.strip()]
         self._client = None
         self._connected = False
         self._reason = "not initialized"
@@ -344,20 +350,52 @@ class VertexExtractor:
             return None
         import time
         from google.genai import types
-        from .extraction import ClaimExtractionSchema
+        from .extraction import ClaimExtractionSchema, is_model_unavailable_error
 
         start = time.time()
+        candidates = [self.model]
+        for fb in self.fallbacks:
+            if fb != self.model and fb not in candidates:
+                candidates.append(fb)
+
+        answering_model = None
+        raw_text = None
+        last_exc = None
+
+        cfg = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=list[ClaimExtractionSchema],
+        )
+
+        for current_model in candidates:
+            try:
+                resp = self._client.models.generate_content(
+                    model=current_model,
+                    contents=[f"{prompt}\nSource Type: {source_type}\nText:\n{text}"],
+                    config=cfg,
+                )
+                raw_text = getattr(resp, "text", None) or ""
+                answering_model = current_model
+                log.info("Vertex extraction succeeded using model: %s", answering_model)
+                break
+            except Exception as exc:
+                last_exc = exc
+                if is_model_unavailable_error(exc):
+                    log.warning(
+                        "Vertex model %s unavailable (%s). Retrying with fallback...",
+                        current_model,
+                        exc,
+                    )
+                    continue
+                else:
+                    log.warning("Vertex extraction error on model %s: %s", current_model, exc)
+                    break
+
+        if raw_text is None:
+            log.warning("Vertex extraction failed (falling back): %s", last_exc)
+            return None
+
         try:
-            cfg = types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=list[ClaimExtractionSchema],
-            )
-            resp = self._client.models.generate_content(
-                model=self.model,
-                contents=[f"{prompt}\nSource Type: {source_type}\nText:\n{text}"],
-                config=cfg,
-            )
-            raw_text = getattr(resp, "text", None) or ""
             parsed = json.loads(raw_text)
             if isinstance(parsed, dict) and "claims" in parsed:
                 raw_claims = parsed["claims"]
@@ -368,10 +406,19 @@ class VertexExtractor:
             else:
                 raw_claims = []
 
+            validated_claims = []
+            for c in raw_claims:
+                if isinstance(c, dict):
+                    try:
+                        schema_item = ClaimExtractionSchema.model_validate(c)
+                        validated_claims.append(schema_item.to_claim_dict())
+                    except Exception:
+                        validated_claims.append(c)
+
             return {
-                "claims": raw_claims,
+                "claims": validated_claims,
                 "latency_ms": round((time.time() - start) * 1000, 2),
-                "model": f"{self.model} (vertex)",
+                "model": f"{answering_model} (vertex)",
             }
         except Exception:
             log.warning("Vertex extraction failed (falling back)", exc_info=True)

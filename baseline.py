@@ -132,10 +132,7 @@ def main():
     texts = load_text_sources(fx)
     cfg = None
     if client:
-        cfg_kwargs = {"response_mime_type": "application/json"}
-        if a.temperature is not None:
-            cfg_kwargs["temperature"] = a.temperature
-        cfg = types.GenerateContentConfig(**cfg_kwargs)
+        cfg = types.GenerateContentConfig(response_mime_type="application/json")
     rows = []
     with open(out / "runs.jsonl", "w", encoding="utf-8") as f:
         for test in ("A", "B"):
