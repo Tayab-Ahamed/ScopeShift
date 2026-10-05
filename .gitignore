@@ -1,23 +1,34 @@
-# Node dependencies
-node_modules/
-.ppt-build/node_modules/
-
-# Python cache & virtualenvs
+# Python cache & virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
 venv/
 env/
+.pytest_cache/
 
-# Local databases
+# Local databases & runtime state
 events.db
 *.sqlite
 *.db
+scratch/
+.codex-finalizer/
+*.log
 
-# Media & presentations
+# Environment & secrets (never commit credentials)
+.env
+.env.*
+!.env.example
+scopeshift-key.json
+*-key.json
+
+# Media, build & temporary outputs
 brag-output/
 submission/
+.ppt-build/
+preview/
+baseline_out/
+node_modules/
 
 # OS and Editor files
 .DS_Store
