@@ -13,6 +13,11 @@ env/
 # Local databases
 events.db
 *.sqlite
+*.db
+
+# Media & presentations
+brag-output/
+submission/
 
 # OS and Editor files
 .DS_Store

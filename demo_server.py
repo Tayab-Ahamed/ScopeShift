@@ -55,7 +55,12 @@ def get_next_source_id(store: EventStore) -> str:
     return f"SRC-{max_num + 1:02d}"
 
 
-def create_demo_store(db_path: str = ":memory:") -> EventStore:
+DEFAULT_DB_PATH = "./events.db"
+
+
+def create_demo_store(db_path: str | None = None) -> EventStore:
+    if db_path is None:
+        db_path = os.environ.get("SCOPESHIFT_DB", DEFAULT_DB_PATH)
     store = EventStore(db_path)
     if not (FIXTURES_DIR / "brd.pdf").exists() or not (FIXTURES_DIR / "checkout.png").exists():
         from make_fixtures import make_brd, make_screenshot, CLIENT_NOTE
@@ -274,7 +279,7 @@ def artifact_url(source_id: str) -> dict | None:
 _SOURCE_TYPE_FILES = {"brd": "brd.pdf", "screenshot": "checkout.png", "client_note": "client_note.txt"}
 
 demo_store = create_demo_store
-STORE: EventStore = create_demo_store(os.environ.get("SCOPESHIFT_DB", ":memory:"))
+STORE: EventStore = create_demo_store(os.environ.get("SCOPESHIFT_DB", DEFAULT_DB_PATH))
 EXTRACTOR = Extractor(vertex_extractor=VERTEX)
 
 
@@ -481,7 +486,9 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/health":
-            self.send_json({"status": "ok", "version": "1.0.0", "persisted": bool(os.environ.get("SCOPESHIFT_DB"))})
+            db_path = os.environ.get("SCOPESHIFT_DB", DEFAULT_DB_PATH)
+            persisted = bool(db_path and db_path != ":memory:")
+            self.send_json({"status": "ok", "version": "1.0.0", "persisted": persisted})
             return
 
         if path == "/favicon.ico":

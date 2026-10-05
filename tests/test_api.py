@@ -46,6 +46,7 @@ def test_health_endpoint(test_server):
     status, body, headers = req(f"{test_server}/api/health")
     assert status == 200
     assert body["status"] == "ok"
+    assert body["persisted"] is True
     assert headers.get("X-Content-Type-Options") == "nosniff"
 
 

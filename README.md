@@ -93,54 +93,58 @@ Result: Requirement Withheld     Baseline marked SUPERSEDED        Forensic hist
 
 ---
 
+## Operational Modes: Live vs Offline
+
+ScopeShift is fail-closed and works completely offline without network or credentials. Here is what is live vs offline:
+
+| Component | Offline Mode (Default / No Credentials) | Live Mode (With API Key & GCP Credentials) |
+|---|---|---|
+| **Event Ledger & Hash Chain** | Live SQLite (`./events.db`) append-only monotonic SHA-256 chain | Live SQLite + dual-write streaming mirror to Google BigQuery |
+| **Claim Ingestion & Validation** | Deterministic code validation gate; SHA-256 verified fixtures for demo replay | Google Gemini API (`GEMINI_API_KEY`) or Vertex AI (`google-genai` SDK with `vertexai=True`) |
+| **Screenshot Verification** | Real image header dimensions + bounding check; verifier fails closed without model | Pillow crop + separate Gemini transcription call + code-level string match |
+| **Approver Governance** | `approvers.json` allowlist validation; untrusted senders demoted to observations | Same: cryptographic audit log with sender, channel, and timestamp |
+| **Artifact Storage** | Local file serving (`/fixtures/*`) | Google Cloud Storage (GCS) upload + signed URLs |
+| **Conflict Resolver & BRD** | 100% deterministic local state machine; pure function over event log | Same: 100% deterministic local state machine (Gemini proposes, code decides) |
+
+---
+
 ## Quickstart
 
-### Prerequisites
-- Python 3.10+
-- Modern Web Browser (Chrome, Firefox, Safari, Edge)
-- *Optional:* Google Cloud credentials (for live BigQuery / GCS / Vertex AI dual-write)
-
-### 1. Launch the Server
+### One-Command Quickstart
 ```bash
-python demo_server.py
+pip install -r requirements.txt && python demo_server.py
 ```
 Open **`http://localhost:8765`** in your browser.
 
+- **Persistence Mode:** Persistence is enabled by default to `./events.db` (`SCOPESHIFT_DB` env var). `/api/health` reports `{"persisted": true}`.
 - **Keyboard Shortcuts:** Press `1`, `2`, or `3` to instantly step through the 3 governance stages.
 - **Automated Walkthrough:** Click `▶ Automated Walkthrough` in the header for a timed automated walkthrough.
-- **Persistence Mode:** Set `SCOPESHIFT_DB="scopeshift.db"` to persist events to disk.
 
-### 2. Run the Test Suite
-The complete test suite runs in under 30 seconds with zero external dependencies:
+### Run the Test Suite
+The complete test suite runs with zero external dependencies:
 ```bash
 python -m pytest -q
 ```
-```
-........................................................................ [ 80%]
-..................                                                       [100%]
-90 passed in 27.27s
-```
 
-### 3. Optional Enterprise Cloud Dual-Write
-ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional GCP integrations activate automatically when environment variables and SDKs are present:
+### Optional Enterprise Cloud Dual-Write
+ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional GCP integrations activate automatically when environment variables and credentials are present:
 
 ```bash
-# Install optional cloud SDKs
-pip install google-cloud-bigquery google-cloud-storage google-cloud-aiplatform
-
 # Set configuration variables
+export GEMINI_API_KEY="your-gemini-api-key"
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
 export SCOPESHIFT_BQ_DATASET="scopeshift_audit"
 export SCOPESHIFT_GCS_BUCKET="scopeshift-artifacts"
 export GOOGLE_CLOUD_PROJECT="your-project-id"
 export GOOGLE_CLOUD_LOCATION="us-central1"
+export SCOPESHIFT_APPROVERS="./approvers.json"
 ```
 
 Check connection status at any time via `GET /api/cloud/status` or the live backend indicator cluster in the navigation bar.
 
 ---
 
-## Test Architecture (90/90 Passing)
+## Test Architecture
 
 | Test Module | Coverage Scope |
 |---|---|
@@ -155,13 +159,13 @@ Check connection status at any time via `GET /api/cloud/status` or the live back
 ## Technical Specifications
 
 - **Backend:** Python 3 (standard library `http.server`, `sqlite3`, `hashlib`, `json`, `dataclasses`).
-- **Frontend:** Vanilla modern ES6+, CSS Custom Properties, Canvas 2D sparklines, Three.js 3D spatial twin. Zero frontend build steps or bloated frameworks.
-- **Extraction Model:** Google Gemini 2.5 Flash / Vertex AI with deterministic fallback pipeline.
+- **Frontend:** Vanilla modern ES6+, CSS Custom Properties, Canvas 2D sparklines, Three.js 3D spatial twin. Zero frontend build steps.
+- **Extraction Model:** Google Gemini / Vertex AI structured outputs with deterministic fallback pipeline.
 - **Storage:** Atomic SQLite append-only log with optional Google BigQuery streaming dual-write and Google Cloud Storage artifact storage.
-- **Design Language:** Light technical editorial canvas, Newsreader &amp; Inter typography, WCAG AA compliant contrast.
+- **Design Language:** Light technical editorial canvas, Newsreader & Inter typography, WCAG AA compliant contrast.
 
 ---
 
 ## License
 
-Distributed under the Apache 2.0 License. See `LICENSE` for details.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
