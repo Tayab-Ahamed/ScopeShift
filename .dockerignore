@@ -1,0 +1,17 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.db
+events.db
+.env
+.env.*
+scopeshift-key.json
+*.log
+scratch/
+.idea
+.vscode
+tests/

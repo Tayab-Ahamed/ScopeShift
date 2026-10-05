@@ -326,3 +326,30 @@ def test_chaos_fabricated_screenshot_text(test_server):
     assert "transcription" in body["rule_fired"].lower()
     assert body["validated"]["quote_verified"] is False
 
+
+def test_server_reads_host_and_port_env(monkeypatch):
+    import demo_server
+
+    monkeypatch.setenv("HOST", "0.0.0.0")
+    monkeypatch.setenv("PORT", "9090")
+
+    # Mock ThreadingHTTPServer to verify bound host and port without blocking
+    bound_address = None
+
+    class MockServer:
+        def __init__(self, addr, handler):
+            nonlocal bound_address
+            bound_address = addr
+
+        def serve_forever(self):
+            pass
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(demo_server, "ThreadingHTTPServer", MockServer)
+    monkeypatch.setattr(demo_server, "_upload_fixtures_to_gcs", lambda: None)
+
+    demo_server.run_server()
+    assert bound_address == ("0.0.0.0", 9090)
+

@@ -1263,8 +1263,17 @@ class Handler(BaseHTTPRequestHandler):
         logging.info("%s %s", self.command, self.path)
 
 
-def run_server(port: int = 8765):
-    print(f"ScopeShift server listening on http://localhost:{port}")
+def run_server(host: Optional[str] = None, port: Optional[int] = None):
+    in_container = (
+        os.path.exists("/.dockerenv")
+        or bool(os.environ.get("K_SERVICE"))
+        or bool(os.environ.get("CONTAINER"))
+    )
+    default_host = "0.0.0.0" if in_container else "127.0.0.1"
+    resolved_host = host or os.environ.get("HOST", default_host)
+    resolved_port = int(port or os.environ.get("PORT", 8765))
+
+    print(f"ScopeShift server listening on http://{resolved_host}:{resolved_port}")
     # Honest startup lines: never claim cloud is live when it isn't.
     for name, adapter in (("BigQuery", BQ_LOG), ("GCS", GCS), ("Vertex", VERTEX)):
         st = adapter.status()
@@ -1274,7 +1283,7 @@ def run_server(port: int = 8765):
             logging.info("%s: not connected (%s) — local mirror active", name, st["reason"])
     logging.info("Extraction: %s", EXTRACTOR.effective_mode())
     _upload_fixtures_to_gcs()
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer((resolved_host, resolved_port), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1298,4 +1307,4 @@ def _upload_fixtures_to_gcs() -> None:
 
 
 if __name__ == "__main__":
-    run_server(8765)
+    run_server()
