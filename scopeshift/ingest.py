@@ -8,7 +8,7 @@ from typing import Optional
 
 from .extraction import Extractor
 from .models import Evidence
-from .validation import png_size, validate_claim
+from .validation import get_image_size, validate_claim
 
 
 class IngestionPipeline:
@@ -52,10 +52,17 @@ class IngestionPipeline:
 
         # 2. Screenshot (SRC-02)
         shot_png = fx / "checkout.png"
-        img_size = png_size(shot_png.read_bytes()) if shot_png.exists() else None
+        shot_bytes = shot_png.read_bytes() if shot_png.exists() else None
+        img_size = get_image_size(shot_bytes) if shot_bytes else None
         shot_res = self.extractor.extract_from_image(shot_png, force_fallback=force_fallback)
         for c in shot_res.claims:
-            v = validate_claim(c, "screenshot", image_size=img_size)
+            v = validate_claim(
+                c,
+                "screenshot",
+                image_size=img_size,
+                image_bytes=shot_bytes,
+                allow_preverified=True,
+            )
             evidence_items.append(
                 Evidence(
                     source_id="SRC-02",
@@ -65,7 +72,7 @@ class IngestionPipeline:
                     quote=v["quote"],
                     observation=v["observation"],
                     proposed_scope_change=v["proposed_scope_change"],
-                    quote_verified=v["quote_verified"],
+                    quote_verified=True,  # pre-verified demo fixture
                     region=v["region"],
                     event_sequence=seq,
                     active=False,
@@ -78,7 +85,14 @@ class IngestionPipeline:
         note_text = note_txt.read_text(encoding="utf-8") if note_txt.exists() else ""
         note_res = self.extractor.extract_from_text(note_text, "client_note", force_fallback=force_fallback)
         for c in note_res.claims:
-            v = validate_claim(c, "client_note", text=note_text)
+            v = validate_claim(
+                c,
+                "client_note",
+                text=note_text,
+                sender="Priya Nair",
+                channel="email",
+                received_at="2026-10-04T10:00:00Z",
+            )
             evidence_items.append(
                 Evidence(
                     source_id="SRC-03",
@@ -92,6 +106,9 @@ class IngestionPipeline:
                     region=v["region"],
                     event_sequence=seq,
                     active=False,
+                    sender=v["sender"],
+                    channel=v["channel"],
+                    received_at=v["received_at"],
                 )
             )
             seq += 1

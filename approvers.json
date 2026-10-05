@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Priya Nair",
+    "email": "priya@meridian.internal",
+    "role": "Client Product Owner",
+    "channel": "any"
+  },
+  {
+    "name": "Alex Mercer",
+    "email": "alex@meridian.internal",
+    "role": "Lead Architect",
+    "channel": "any"
+  }
+]

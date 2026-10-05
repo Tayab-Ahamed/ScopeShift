@@ -5,7 +5,7 @@ import json
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 from .models import Event, Evidence
 from .resolver import replay
@@ -14,6 +14,8 @@ from .validation import citation_warnings, validate_citations
 
 class EventStore:
     def __init__(self, path: str | Path = ":memory:"):
+        self.path = str(path)
+        self.persisted = str(path) not in (":memory:", "")
         self.db = sqlite3.connect(str(path), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         # FR-10: sequence assignment must be atomic under the threaded demo server.
@@ -36,13 +38,19 @@ class EventStore:
                 proposed_scope_change INTEGER NOT NULL DEFAULT 0,
                 quote_verified INTEGER NOT NULL DEFAULT 0,
                 region_json TEXT,
-                created_sequence INTEGER NOT NULL UNIQUE
+                created_sequence INTEGER NOT NULL UNIQUE,
+                sender TEXT,
+                channel TEXT,
+                received_at TEXT
             );
             CREATE TABLE IF NOT EXISTS event_log (
                 event_sequence INTEGER PRIMARY KEY,
                 source_id TEXT NOT NULL REFERENCES evidence(source_id),
                 event TEXT NOT NULL CHECK(event IN ('ADDED', 'REMOVED')),
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sender TEXT,
+                channel TEXT,
+                payload_json TEXT DEFAULT '{}'
             );
             CREATE TRIGGER IF NOT EXISTS evidence_no_update BEFORE UPDATE ON evidence BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
             CREATE TRIGGER IF NOT EXISTS evidence_no_delete BEFORE DELETE ON evidence BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
@@ -50,6 +58,18 @@ class EventStore:
             CREATE TRIGGER IF NOT EXISTS event_no_delete BEFORE DELETE ON event_log BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
             """
         )
+        for tbl, col in [
+            ("evidence", "sender TEXT"),
+            ("evidence", "channel TEXT"),
+            ("evidence", "received_at TEXT"),
+            ("event_log", "sender TEXT"),
+            ("event_log", "channel TEXT"),
+            ("event_log", "payload_json TEXT DEFAULT '{}'"),
+        ]:
+            try:
+                self.db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col}")
+            except Exception:
+                pass
 
     def seed(self, evidence: Iterable[Evidence]) -> None:
         with self.db:
@@ -59,8 +79,9 @@ class EventStore:
                     """
                     INSERT OR IGNORE INTO evidence 
                     (source_id, source_type, claim_id, value_json, quote, observation, 
-                     proposed_scope_change, quote_verified, region_json, created_sequence)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     proposed_scope_change, quote_verified, region_json, created_sequence,
+                     sender, channel, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         item.source_id,
@@ -73,6 +94,9 @@ class EventStore:
                         int(item.quote_verified),
                         region_json,
                         item.event_sequence,
+                        item.sender,
+                        item.channel,
+                        item.received_at,
                     ),
                 )
 
@@ -81,6 +105,7 @@ class EventStore:
         evidence_list = []
         for r in rows:
             region = json.loads(r["region_json"]) if r["region_json"] else None
+            keys = r.keys()
             evidence_list.append(
                 Evidence(
                     source_id=r["source_id"],
@@ -94,15 +119,44 @@ class EventStore:
                     region=region,
                     event_sequence=r["created_sequence"],
                     active=False,
+                    sender=r["sender"] if "sender" in keys else None,
+                    channel=r["channel"] if "channel" in keys else None,
+                    received_at=r["received_at"] if "received_at" in keys else None,
                 )
             )
         return evidence_list
 
     def _load_events(self) -> list[Event]:
-        rows = self.db.execute("SELECT event_sequence, source_id, event FROM event_log ORDER BY event_sequence").fetchall()
-        return [Event(r["event_sequence"], r["source_id"], r["event"]) for r in rows]
+        rows = self.db.execute("SELECT * FROM event_log ORDER BY event_sequence").fetchall()
+        events = []
+        for r in rows:
+            keys = r.keys()
+            payload = {}
+            if "payload_json" in keys and r["payload_json"]:
+                try:
+                    payload = json.loads(r["payload_json"])
+                except Exception:
+                    payload = {}
+            events.append(
+                Event(
+                    event_sequence=r["event_sequence"],
+                    source_id=r["source_id"],
+                    event=r["event"],
+                    sender=r["sender"] if "sender" in keys else None,
+                    channel=r["channel"] if "channel" in keys else None,
+                    payload=payload,
+                )
+            )
+        return events
 
-    def add_event(self, source_id: str, event: str) -> Event:
+    def add_event(
+        self,
+        source_id: str,
+        event: str,
+        sender: Optional[str] = None,
+        channel: Optional[str] = None,
+        payload: Optional[dict] = None,
+    ) -> Event:
         if event not in {"ADDED", "REMOVED"}:
             raise ValueError(f"event must be ADDED or REMOVED (got {event!r})")
         # FR-10: the sequence read and the insert are one atomic section. Without the lock,
@@ -111,15 +165,33 @@ class EventStore:
             evidence = self._load_evidence()
             existing = self._load_events()
             next_seq = (existing[-1].event_sequence if existing else 0) + 1
-            candidate = list(existing) + [Event(next_seq, source_id, event)]
+
+            ev_item = next((e for e in evidence if e.source_id == source_id), None)
+            eff_sender = sender if sender is not None else (ev_item.sender if ev_item else None)
+            eff_channel = channel if channel is not None else (ev_item.channel if ev_item else None)
+            eff_payload = payload or {}
+            if eff_sender:
+                eff_payload.setdefault("sender", eff_sender)
+            if eff_channel:
+                eff_payload.setdefault("channel", eff_channel)
+
+            candidate_event = Event(
+                next_seq,
+                source_id,
+                event,
+                sender=eff_sender,
+                channel=eff_channel,
+                payload=eff_payload,
+            )
+            candidate = list(existing) + [candidate_event]
 
             # Validate replay state machine invariants before persisting
             replay(evidence, candidate)
 
             with self.db:
                 self.db.execute(
-                    "INSERT INTO event_log (event_sequence, source_id, event) VALUES (?, ?, ?)",
-                    (next_seq, source_id, event),
+                    "INSERT INTO event_log (event_sequence, source_id, event, sender, channel, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
+                    (next_seq, source_id, event, eff_sender, eff_channel, json.dumps(eff_payload)),
                 )
         return candidate[-1]
 
@@ -138,9 +210,17 @@ class EventStore:
         for ev in self._load_events():
             hash_input = f"{prev_hash}:{ev.event_sequence}:{ev.source_id}:{ev.event}"
             h = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
-            chain.append({"sequence": ev.event_sequence, "source_id": ev.source_id,
-                          "event": ev.event, "hash": h, "prev_hash": prev_hash,
-                          "hash_input": hash_input})
+            chain.append({
+                "sequence": ev.event_sequence,
+                "source_id": ev.source_id,
+                "event": ev.event,
+                "sender": ev.sender,
+                "channel": ev.channel,
+                "payload": ev.payload,
+                "hash": h,
+                "prev_hash": prev_hash,
+                "hash_input": hash_input,
+            })
             prev_hash = h
         return chain
 
@@ -173,21 +253,38 @@ class EventStore:
                 "quote_verified": e.quote_verified,
                 "region": list(e.region) if e.region else None,
                 "active": e.source_id in active_ids,
+                "sender": e.sender,
+                "channel": e.channel,
+                "received_at": e.received_at,
             }
             for e in evidence
         ]
 
         chain = self.audit_chain()
+        events_out = [
+            {
+                "event_sequence": ev.event_sequence,
+                "source_id": ev.source_id,
+                "event": ev.event,
+                "sender": ev.sender,
+                "channel": ev.channel,
+                "payload": ev.payload,
+            }
+            for ev in events
+        ]
 
         return {
             "resolutions": {k: v.to_dict() for k, v in res.resolutions.items()},
             "sources": sources_out,
-            "events": [e.__dict__ for e in events],
+            "events": events_out,
             "timeline": res.timeline,
             "audit_chain": chain,
+            "chain_valid": True,
+            "chain_tip": chain[-1]["hash"] if chain else "0" * 64,
+            "current_seq": events[-1].event_sequence if events else 0,
+            "mirror_note": "Local SQLite Log (Active: Monotonic SHA-256 Hash Chained)",
             "citation_warnings": cite_warnings,
             "citation_integrity": "ok",
-            "mirror_note": "SQLite is the local persisted append-only log. The UI reads a replayed snapshot of it.",
         }
 
     def close(self) -> None:

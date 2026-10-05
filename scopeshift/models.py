@@ -19,18 +19,26 @@ class Evidence:
     region: tuple | None = None
     event_sequence: int = 0
     active: bool = False
+    sender: str | None = None
+    channel: str | None = None
+    received_at: str | None = None
 
     @property
     def governing(self) -> bool:
-        """FR-7: only a verified client-note scope change on a governable claim can govern."""
+        """FR-7: only a verified client-note scope change on a governable claim from an authorized sender can govern."""
+        from .approvers import is_sender_allowlisted
         spec = SPECS.get(self.claim_id)
-        return bool(
+        if not (
             self.proposed_scope_change
             and self.quote_verified
             and self.source_type == "client_note"
             and spec is not None
             and spec.governable
-        )
+        ):
+            return False
+        if self.sender is not None:
+            return is_sender_allowlisted(self.sender, self.channel)
+        return True
 
 
 @dataclass(frozen=True)
@@ -38,6 +46,9 @@ class Event:
     event_sequence: int
     source_id: str
     event: str
+    sender: str | None = None
+    channel: str | None = None
+    payload: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
