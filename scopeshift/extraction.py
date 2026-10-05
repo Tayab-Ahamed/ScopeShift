@@ -271,6 +271,7 @@ class Extractor:
         self.retry_delay_base = retry_delay_base
         self._client = None
         self._vertex = vertex_extractor
+        self.last_failure_reason: Optional[str] = None
 
         if self.api_key:
             try:
@@ -290,14 +291,29 @@ class Extractor:
                 self._vertex = False
         return self._vertex or None
 
+    @property
+    def route(self) -> str:
+        """True extraction route: live-gemini, live-vertex, or offline."""
+        if self._client:
+            return "live-gemini"
+        vx = self._get_vertex()
+        if vx is not None and getattr(vx, "status", lambda: {})().get("connected"):
+            return "live-vertex"
+        return "offline"
+
     def effective_mode(self) -> str:
         """Honest extraction route for the status endpoint."""
         if self._client:
             return "live"
         vx = self._get_vertex()
-        if vx is not None and vx.status().get("connected"):
+        if vx is not None and getattr(vx, "status", lambda: {})().get("connected"):
             return "live (vertex)"
         return "deterministic-fallback"
+
+    def _record_result(self, res: ExtractionResult) -> ExtractionResult:
+        if res.reason:
+            self.last_failure_reason = res.reason
+        return res
 
     def _call_gemini_with_retry(
         self, contents: list, config

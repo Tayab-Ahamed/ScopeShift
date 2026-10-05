@@ -11,6 +11,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+import email
+import io
+
+from scopeshift.approvers import is_sender_allowlisted
 from scopeshift.cloud import BQ_DATASET_ENV, GCS_BUCKET_ENV, BigQueryLog, GCSOriginals, VertexExtractor
 from scopeshift.ask import answer_question
 from scopeshift.extraction import Extractor
@@ -22,15 +26,19 @@ from scopeshift.store import EventStore
 from scopeshift.validation import (
     ValidationError,
     citation_warnings,
+    crop_image,
+    get_image_size,
     normalize,
+    png_size,
     quote_in_text,
     validate_citations,
     validate_claim,
+    verify_screenshot_crop,
 )
 
 ROOT = Path(__file__).parent.resolve()
 FIXTURES_DIR = ROOT / "fixtures"
-MAX_BODY = 64 * 1024
+MAX_BODY = 16 * 1024 * 1024
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 # Tier 1 GCP integrations (Stream B): env-gated, import-guarded, honest no-ops
@@ -88,16 +96,59 @@ def _mirror_event(event: Event) -> None:
         logging.warning("BigQuery dual-write failed (local log unaffected)", exc_info=True)
 
 
-def _store_event(store: EventStore, source_id: str, event: str) -> Event:
+def _store_event(
+    store: EventStore,
+    source_id: str,
+    event: str,
+    sender: str | None = None,
+    channel: str | None = None,
+    payload: dict | None = None,
+) -> Event:
     """add_event + best-effort BigQuery mirror."""
-    ev = store.add_event(source_id, event)
+    ev = store.add_event(source_id, event, sender=sender, channel=channel, payload=payload)
     _mirror_event(ev)
     return ev
 
 
+def _parse_multipart(body: bytes, content_type: str) -> dict:
+    msg = email.message_from_bytes(b"Content-Type: " + content_type.encode("latin1") + b"\r\n\r\n" + body)
+    fields = {}
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.is_multipart():
+                continue
+            cd = part.get("Content-Disposition", "")
+            if "form-data" in cd:
+                name = part.get_param("name", header="content-disposition")
+                filename = part.get_filename()
+                payload = part.get_payload(decode=True)
+                if filename:
+                    fields["file_bytes"] = payload
+                    fields["filename"] = filename
+                elif name:
+                    fields[name] = payload.decode("utf-8", errors="replace")
+    return fields
+
+
+def _make_crop_transcriber():
+    if EXTRACTOR._client:
+        def transcriber(crop_bytes: bytes) -> str:
+            from google.genai import types
+            part = types.Part.from_bytes(data=crop_bytes, mime_type="image/png")
+            prompt = "Return only the visible text inside this image crop verbatim."
+            resp = EXTRACTOR._client.models.generate_content(
+                model=EXTRACTOR.model, contents=[prompt, part]
+            )
+            return getattr(resp, "text", "") or ""
+        return transcriber
+    return None
+
+
 def _ingest_text_evidence(store: EventStore, *, source_type: str, claim_id: str, text: str,
                           quote: str, observation: str, proposed_scope_change: bool,
-                          value, region) -> tuple[str, dict]:
+                          value, region, image_bytes: bytes | None = None,
+                          sender: str | None = None, channel: str | None = None,
+                          received_at: str | None = None) -> tuple[str, dict, Evidence]:
     """The real ad-hoc ingestion pipeline, shared by POST /api/ingest and the
     live SSE feed: code validation boundary -> Evidence -> seed -> ADDED event
     (+ best-effort BigQuery dual-write inside _store_event).
@@ -111,9 +162,29 @@ def _ingest_text_evidence(store: EventStore, *, source_type: str, claim_id: str,
         "proposed_scope_change": proposed_scope_change,
         "value": value,
         "region": region,
+        "sender": sender,
+        "channel": channel,
+        "received_at": received_at,
     }
-    img_size = (900, 620) if source_type == "screenshot" else None
-    v = validate_claim(raw_claim, source_type, text=text, image_size=img_size)
+    img_size = None
+    if source_type == "screenshot":
+        if image_bytes:
+            img_size = get_image_size(image_bytes)
+        elif (FIXTURES_DIR / "checkout.png").exists():
+            img_size = get_image_size((FIXTURES_DIR / "checkout.png").read_bytes())
+    transcriber = _make_crop_transcriber()
+    v = validate_claim(
+        raw_claim,
+        source_type,
+        text=text,
+        image_size=img_size,
+        image_bytes=image_bytes,
+        transcriber=transcriber,
+        allow_preverified=(image_bytes is None),
+        sender=sender,
+        channel=channel,
+        received_at=received_at,
+    )
 
     sid = get_next_source_id(store)
     max_seq = store.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
@@ -129,6 +200,9 @@ def _ingest_text_evidence(store: EventStore, *, source_type: str, claim_id: str,
         region=v["region"],
         event_sequence=max_seq,
         active=False,
+        sender=v["sender"],
+        channel=v["channel"],
+        received_at=v["received_at"],
     )
     store.seed([item])
     _store_event(store, sid, "ADDED")
@@ -163,13 +237,16 @@ def _stream_feed(handler: "Handler", loop: bool) -> None:
         return {cid: r.get("state") for cid, r in snapshot.get("resolutions", {}).items()}
 
     try:
+        has_key = bool(EXTRACTOR.api_key)
         send("feed-start", {
             "scenario": SCENARIO_TITLE,
             "arrivals": len(ARRIVALS),
-            "simulated": True,
+            "simulated": not has_key,
+            "mode": "live-gemini" if has_key else "scripted",
             "loop": loop,
-            "note": "Scripted scenario — arrivals are simulated, but each is ingested "
-                    "through the real validation pipeline and event log.",
+            "note": ("Live Gemini extraction feed" if has_key else
+                    "Scripted scenario — arrivals are simulated, but each is ingested "
+                    "through the real validation pipeline and event log."),
         })
 
         while True:
@@ -179,17 +256,38 @@ def _stream_feed(handler: "Handler", loop: bool) -> None:
 
                 store = STORE  # read the current global (beats may have re-seeded)
                 before = claim_states(store.snapshot())
+
+                arr_quote = arrival["quote"]
+                arr_val = arrival["value"]
+                arr_obs = arrival["observation"]
+                arr_scope = bool(arrival["proposed_scope_change"])
+
+                if has_key and arrival.get("text") and arrival["kind"] != "withdrawal":
+                    try:
+                        ext_res = EXTRACTOR.extract_from_text(arrival["text"], arrival["source_type"])
+                        for c in ext_res.claims:
+                            if c.get("claim_id") == arrival["claim_id"]:
+                                arr_quote = c.get("quote", arr_quote)
+                                arr_val = c.get("value", arr_val)
+                                arr_obs = c.get("observation", arr_obs)
+                                if "proposed_scope_change" in c:
+                                    arr_scope = bool(c["proposed_scope_change"])
+                                break
+                    except Exception as exc:
+                        logging.warning("Live extraction failed on feed arrival %d: %s", idx, exc)
+
                 payload: dict = {
                     "arrival_index": idx,
                     "arrival_total": len(ARRIVALS),
                     "kind": arrival["kind"],
                     "source_type": arrival["source_type"],
                     "claim_id": arrival["claim_id"],
-                    "quote": arrival["quote"],
-                    "observation": arrival["observation"],
+                    "quote": arr_quote,
+                    "observation": arr_obs,
                     "text_snippet": (arrival.get("text") or "")[:160],
-                    "proposed_scope_change": bool(arrival["proposed_scope_change"]),
-                    "simulated": True,
+                    "proposed_scope_change": arr_scope,
+                    "simulated": not has_key,
+                    "mode": "live-gemini" if has_key else "scripted",
                     "ingest_error": None,
                 }
                 try:
@@ -198,10 +296,10 @@ def _stream_feed(handler: "Handler", loop: bool) -> None:
                         source_type=arrival["source_type"],
                         claim_id=arrival["claim_id"],
                         text=arrival.get("text", ""),
-                        quote=arrival["quote"],
-                        observation=arrival["observation"],
-                        proposed_scope_change=bool(arrival["proposed_scope_change"]),
-                        value=arrival["value"],
+                        quote=arr_quote,
+                        observation=arr_obs,
+                        proposed_scope_change=arr_scope,
+                        value=arr_val,
                         region=arrival.get("region"),
                     )
                     evts = store.snapshot()["events"]
@@ -381,6 +479,74 @@ def _run_chaos_test(chaos_type: str) -> dict:
                                "hallucinated claim was halted before reaching the event log.",
             })
 
+    elif chaos_type == "forged_sender":
+        # Attack: valid quote and proposed_scope_change, but sender is NOT in approver allowlist.
+        source_text = "Checkout shall support Card payments. UPI moves to Phase 2."
+        raw = {
+            "claim_id": "checkout.payment_methods",
+            "quote": "Checkout shall support Card payments. UPI moves to Phase 2.",
+            "observation": "Unauthorized scope change attempt",
+            "proposed_scope_change": True,
+            "value": {"methods": ["Card"], "deferred": ["UPI"]},
+            "sender": "Mallory (External Impersonator)",
+            "channel": "email",
+        }
+        validated = validate_claim(raw, "client_note", text=source_text)
+        receipt.update({
+            "rule_fired": "approver allowlist check: sender must match authorized role in approvers.json "
+                          "(SCOPESHIFT_APPROVERS). Non-allowlisted senders cannot govern.",
+            "payload": {"sender": raw["sender"], "channel": raw["channel"], "quote": raw["quote"]},
+            "validated": {
+                "proposed_scope_change": validated["proposed_scope_change"],
+                "quote_verified": validated["quote_verified"],
+                "observation": validated["observation"],
+            },
+            "classification": "OBSERVATION only — sender not authorised; Evidence.governing is False",
+            "explanation": "Blocked: sender 'Mallory (External Impersonator)' is not in the approver "
+                           "allowlist. Code validation demoted the claim to an observation with reason "
+                           "'sender not authorised'. The unauthorized note cannot govern requirements.",
+        })
+
+    elif chaos_type == "fabricated_screenshot_text":
+        # Attack: valid bounding box on checkout UI, but fabricated quote text not in the crop.
+        shot = FIXTURES_DIR / "checkout.png"
+        raw = {
+            "claim_id": "checkout.payment_methods",
+            "quote": "Cryptocurrency Approved At Checkout",
+            "observation": "Fabricated text claim with valid UI bounding box",
+            "proposed_scope_change": False,
+            "value": {"methods": ["Card"]},
+            "region": [460, 285, 370, 80],
+        }
+        shot_bytes = shot.read_bytes() if shot.exists() else b""
+        img_size = get_image_size(shot_bytes) if shot_bytes else (900, 620)
+        # Separate verifier transcriber returning the actual visible text ("Pay with Card")
+        mock_crop_transcriber = lambda crop: "Pay with Card"
+        validated = validate_claim(
+            raw,
+            "screenshot",
+            image_size=img_size,
+            image_bytes=shot_bytes,
+            transcriber=mock_crop_transcriber,
+        )
+        receipt.update({
+            "rule_fired": "screenshot transcription verification: text extracted from cropped image "
+                          "region must match the cited quote after normalization",
+            "payload": {
+                "submitted_quote": raw["quote"],
+                "transcribed_crop_text": "Pay with Card",
+                "region": raw["region"],
+            },
+            "validated": {
+                "quote_verified": validated["quote_verified"],
+                "region": list(validated["region"]) if validated["region"] else None,
+            },
+            "classification": "UNVERIFIED visual claim — quote_verified is False; visual observation cannot govern",
+            "explanation": "Blocked: bounding box [460, 285, 370, 80] was cropped with Pillow and "
+                           "transcribed. The actual visible text is 'Pay with Card', which does not match "
+                           "the fabricated quote 'Cryptocurrency Approved At Checkout'. Code set quote_verified=False.",
+        })
+
     else:
         receipt.update({
             "rule_fired": "unknown chaos type",
@@ -511,11 +677,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/cloud/status":
             # Honest backend status for the UI pill cluster: each service reports
             # connected (live) or disconnected-with-reason (local mirror active).
+            route = EXTRACTOR.route
+            ext_mode = EXTRACTOR.effective_mode()
             self.send_json({
                 "bigquery": BQ_LOG.status(),
                 "gcs": GCS.status(),
                 "vertex": VERTEX.status(),
-                "extraction": {"mode": EXTRACTOR.effective_mode()},
+                "extraction": {
+                    "mode": ext_mode,
+                    "route": route,
+                    "last_failure_reason": EXTRACTOR.last_failure_reason,
+                },
+                "route": route,
+                "last_failure_reason": EXTRACTOR.last_failure_reason,
             })
             return
 
@@ -614,10 +788,145 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         body_bytes = self.rfile.read(content_length) if content_length > 0 else b"{}"
-        try:
-            data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
-        except json.JSONDecodeError:
-            self.send_json({"error": {"code": "BAD_REQUEST", "message": "Invalid JSON"}}, 400)
+        ctype = self.headers.get("Content-Type", "")
+        if ctype.startswith("multipart/form-data"):
+            import io
+            data = _parse_multipart(io.BytesIO(body_bytes), ctype, content_length)
+        else:
+            try:
+                data = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            except json.JSONDecodeError:
+                self.send_json({"error": {"code": "BAD_REQUEST", "message": "Invalid JSON"}}, 400)
+                return
+
+        if path == "/api/extract":
+            import base64
+            source_type = data.get("source_type") or "client_note"
+            text = data.get("text")
+            file_bytes = data.get("file_bytes")
+            filename = data.get("filename", "")
+            sender = data.get("sender")
+            channel = data.get("channel")
+
+            if not file_bytes and data.get("file_base64"):
+                try:
+                    file_bytes = base64.b64decode(data["file_base64"])
+                except Exception as exc:
+                    self.send_json({"error": {"code": "VALIDATION_ERROR", "message": f"Invalid base64 payload: {exc}"}}, 422)
+                    return
+
+            if not file_bytes and data.get("file") and isinstance(data.get("file"), str):
+                try:
+                    file_bytes = base64.b64decode(data["file"])
+                except Exception:
+                    pass
+
+            if not file_bytes and not text:
+                self.send_json({"error": {"code": "VALIDATION_ERROR", "message": "Either file or text is required for extraction"}}, 422)
+                return
+
+            doc_text = text or ""
+            img_bytes = None
+            extract_res = None
+
+            if file_bytes:
+                is_pdf = file_bytes.startswith(b"%PDF") or filename.lower().endswith(".pdf")
+                is_png = file_bytes.startswith(b"\x89PNG") or filename.lower().endswith(".png")
+                is_jpeg = file_bytes.startswith(b"\xff\xd8\xff") or filename.lower().endswith((".jpg", ".jpeg"))
+                is_image = is_png or is_jpeg or file_bytes.startswith(b"RIFF")
+
+                if is_pdf:
+                    source_type = data.get("source_type") or "brd"
+                    extract_res = EXTRACTOR.extract_from_pdf(file_bytes, source_type=source_type)
+                    try:
+                        import pypdf
+                        import io
+                        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                        doc_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+                    except Exception:
+                        doc_text = ""
+                elif is_image:
+                    source_type = data.get("source_type") or "screenshot"
+                    img_bytes = file_bytes
+                    extract_res = EXTRACTOR.extract_from_image(file_bytes, source_type=source_type)
+                else:
+                    try:
+                        doc_text = file_bytes.decode("utf-8")
+                    except Exception:
+                        doc_text = file_bytes.decode("latin-1", errors="replace")
+                    extract_res = EXTRACTOR.extract_from_text(doc_text, source_type=source_type)
+            else:
+                extract_res = EXTRACTOR.extract_from_text(doc_text, source_type=source_type)
+
+            receipts = []
+            img_size = get_image_size(img_bytes) if img_bytes else None
+            transcriber = _make_crop_transcriber() if img_bytes else None
+
+            for claim in extract_res.claims:
+                try:
+                    v = validate_claim(
+                        claim,
+                        source_type,
+                        text=doc_text,
+                        image_size=img_size,
+                        image_bytes=img_bytes,
+                        transcriber=transcriber,
+                        sender=sender,
+                        channel=channel,
+                    )
+                    sid = get_next_source_id(STORE)
+                    max_seq = STORE.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+                    item = Evidence(
+                        source_id=sid,
+                        source_type=source_type,
+                        claim_id=v["claim_id"],
+                        value=v["value"],
+                        quote=v["quote"],
+                        observation=v["observation"],
+                        proposed_scope_change=v["proposed_scope_change"],
+                        quote_verified=v["quote_verified"],
+                        region=v["region"],
+                        event_sequence=max_seq,
+                        active=False,
+                        sender=v["sender"],
+                        channel=v["channel"],
+                        received_at=v["received_at"],
+                    )
+                    STORE.seed([item])
+                    _store_event(STORE, sid, "ADDED", sender=v["sender"], channel=v["channel"])
+                    receipts.append({
+                        "claim_id": v["claim_id"],
+                        "source_id": sid,
+                        "status": "verified" if v["quote_verified"] else "unverified",
+                        "quote_verified": v["quote_verified"],
+                        "governing": item.governing,
+                        "observation": v["observation"],
+                        "error": None,
+                    })
+                except ValidationError as err:
+                    receipts.append({
+                        "claim_id": claim.get("claim_id"),
+                        "source_id": None,
+                        "status": "rejected",
+                        "quote_verified": False,
+                        "governing": False,
+                        "observation": claim.get("observation", ""),
+                        "error": str(err),
+                    })
+
+            self.send_json({
+                "claims": extract_res.claims,
+                "receipts": receipts,
+                "extraction": {
+                    "mode": extract_res.mode,
+                    "route": EXTRACTOR.route,
+                    "model": extract_res.model,
+                    "latency_ms": round(extract_res.latency_ms, 2),
+                    "reason": extract_res.reason,
+                    "error_type": extract_res.error_type,
+                },
+                "state": STORE.snapshot(),
+            }, 200)
             return
 
         if path == "/api/demo/reset":

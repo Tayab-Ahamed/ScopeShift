@@ -1,5 +1,6 @@
 """Tests for demo_server HTTP API including advanced features."""
 import json
+from pathlib import Path
 import urllib.request
 import threading
 import time
@@ -264,3 +265,64 @@ def test_api_govern_and_withdraw(test_server):
     assert body["event"]["event"] == "REMOVED"
     # State reflects withdrawal
     assert body["state"]["resolutions"]["refunds.settlement_sla"]["disappeared"] is not None
+
+
+def test_api_extract_endpoint_known_fixture(test_server):
+    req(f"{test_server}/api/demo/beat", "POST", {"beat": 1})
+    note_file = Path(__file__).parent.parent / "fixtures" / "client_note.txt"
+    note_text = note_file.read_text(encoding="utf-8")
+    status, body, _ = req(f"{test_server}/api/extract", "POST", {
+        "source_type": "client_note",
+        "text": note_text,
+        "sender": "Priya Nair",
+        "channel": "slack",
+    })
+    assert status == 200
+    assert "claims" in body
+    assert len(body["claims"]) >= 1
+    assert "receipts" in body
+    assert len(body["receipts"]) >= 1
+    assert body["receipts"][0]["status"] == "verified"
+    assert "extraction" in body
+    assert body["extraction"]["mode"] in ("live", "fallback")
+    assert "latency_ms" in body["extraction"]
+    assert "state" in body
+
+
+def test_api_extract_endpoint_unknown_text_fails_closed(test_server):
+    status, body, _ = req(f"{test_server}/api/extract", "POST", {
+        "source_type": "client_note",
+        "text": "Completely unknown random text that does not match any canned demo fixture.",
+    })
+    assert status == 200
+    # In offline fallback mode, unknown input must NOT return canned claims
+    if body["extraction"]["mode"] == "fallback":
+        assert body["claims"] == []
+        assert body["receipts"] == []
+        assert "offline" in body["extraction"]["reason"]
+
+
+def test_api_cloud_status_route_and_failure_reason(test_server):
+    status, body, _ = req(f"{test_server}/api/cloud/status")
+    assert status == 200
+    assert "route" in body
+    assert body["route"] in ("offline", "live-gemini", "live-vertex")
+    assert "last_failure_reason" in body
+
+
+def test_chaos_forged_sender(test_server):
+    status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "forged_sender"})
+    assert status == 200
+    assert body["blocked"] is True
+    assert "approver" in body["rule_fired"].lower()
+    assert body["validated"]["proposed_scope_change"] is False
+    assert "sender not authorised" in body["validated"]["observation"]
+
+
+def test_chaos_fabricated_screenshot_text(test_server):
+    status, body, _ = req(f"{test_server}/api/demo/chaos", "POST", {"chaos_type": "fabricated_screenshot_text"})
+    assert status == 200
+    assert body["blocked"] is True
+    assert "transcription" in body["rule_fired"].lower()
+    assert body["validated"]["quote_verified"] is False
+

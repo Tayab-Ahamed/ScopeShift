@@ -328,8 +328,60 @@
         </div>
 
         <div class="studio-layout-grid">
-          <!-- Ingestion Form -->
+          <!-- Ingestion Form & Gemini Multi-Modal Extraction -->
           <div class="studio-card">
+            <!-- Gemini Structured Extraction Panel -->
+            <div class="preset-panel" style="margin-bottom: 20px; border-left: 4px solid var(--royal-blue); background: var(--surface-card);">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <div>
+                  <span class="eyebrow-text">Multi-Modal Extraction Studio</span>
+                  <h4 style="margin: 2px 0 4px; font-size: 15px; color: var(--text-headline);">Gemini / Vertex Live Extraction</h4>
+                </div>
+                <span class="brand-badge" id="studio-route-pill">ROUTE: OFFLINE</span>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted); margin: 0 0 14px;">
+                Upload a PDF, PNG, JPEG, or paste document text. Extractor produces structured JSON claims locked to schema, followed by deterministic code-level verification.
+              </p>
+              <form id="extract-form">
+                <div class="field-group">
+                  <label class="field-label" for="inp-extract-type">Artifact Type</label>
+                  <select id="inp-extract-type" class="field-select">
+                    <option value="client_note">Client Note / Scope Directive</option>
+                    <option value="brd">BRD Specification Document</option>
+                    <option value="screenshot">Staging UI Screenshot</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="inp-extract-file">Upload Artifact (PDF, PNG, JPEG)</label>
+                  <input type="file" id="inp-extract-file" class="field-input" accept=".pdf,.png,.jpg,.jpeg">
+                </div>
+                <div class="field-group">
+                  <label class="field-label" for="inp-extract-text">Or Paste Document / Message Text</label>
+                  <textarea id="inp-extract-text" class="field-textarea" rows="3" placeholder="Paste directive text, email thread, or BRD text here..."></textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;" id="extract-sender-fields">
+                  <div class="field-group">
+                    <label class="field-label" for="inp-extract-sender">Sender Name / Email</label>
+                    <input type="text" id="inp-extract-sender" class="field-input" placeholder="e.g. Priya Nair <priya@meridian.internal>">
+                  </div>
+                  <div class="field-group">
+                    <label class="field-label" for="inp-extract-channel">Channel</label>
+                    <input type="text" id="inp-extract-channel" class="field-input" placeholder="e.g. slack, email">
+                  </div>
+                </div>
+                <button type="submit" class="btn-pill btn-primary" id="btn-run-extract" style="width: 100%; justify-content: center; margin-top: 6px;">
+                  &Sigma; Extract &amp; Validate with Gemini (/api/extract)
+                </button>
+              </form>
+              <div id="extract-receipts-container" style="display: none; margin-top: 14px; padding: 12px; background: var(--surface-subtle); border-radius: var(--radius-sm); border: 1px solid var(--border-light);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <strong style="font-size: 13px; color: var(--text-headline);">Extraction Receipts</strong>
+                  <span id="extract-meta-tag" class="brand-badge"></span>
+                </div>
+                <div id="extract-receipts-list"></div>
+              </div>
+            </div>
+
             <div class="preset-panel" id="preset-panel">
               <span class="eyebrow-text">Scenario Presets</span>
               <p class="preset-sub">One click runs a complete scenario through the real validation boundary and event log.</p>
@@ -528,6 +580,16 @@
               <strong class="chaos-tile-title">[TEST 3] Hallucinated Claim ID</strong>
               <span class="chaos-tile-sub">Inject "checkout.bitcoin". Schema validation halts hallucinated claim.</span>
             </button>
+
+            <button class="chaos-test-tile" data-chaos="forged_sender">
+              <strong class="chaos-tile-title">[TEST 4] Forged Sender / Approver</strong>
+              <span class="chaos-tile-sub">Unauthorized external sender claims scope directive. Approver allowlist intercepts.</span>
+            </button>
+
+            <button class="chaos-test-tile" data-chaos="fabricated_screenshot_text">
+              <strong class="chaos-tile-title">[TEST 5] Fabricated Screenshot Text</strong>
+              <span class="chaos-tile-sub">Fabricated quote with valid UI bounding box. Visual crop verification rejects.</span>
+            </button>
           </div>
         </div>
 
@@ -551,6 +613,7 @@
                   <th>Seq #</th>
                   <th>Action</th>
                   <th>Source ID</th>
+                  <th>Sender / Channel</th>
                   <th>SHA-256 State Hash</th>
                   <th>Previous Block Hash</th>
                   <th>Integrity Check</th>

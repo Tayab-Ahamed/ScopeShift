@@ -1077,6 +1077,115 @@
     }
   });
 
+  // Multi-Modal Gemini Extraction form handler (/api/extract)
+  const extractForm = document.querySelector('#extract-form');
+  const inpExtractType = document.querySelector('#inp-extract-type');
+  const inpExtractFile = document.querySelector('#inp-extract-file');
+  const inpExtractText = document.querySelector('#inp-extract-text');
+  const inpExtractSender = document.querySelector('#inp-extract-sender');
+  const inpExtractChannel = document.querySelector('#inp-extract-channel');
+  const extractReceiptsContainer = document.querySelector('#extract-receipts-container');
+  const extractReceiptsList = document.querySelector('#extract-receipts-list');
+  const extractMetaTag = document.querySelector('#extract-meta-tag');
+  const btnRunExtract = document.querySelector('#btn-run-extract');
+
+  extractForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = inpExtractFile?.files?.[0];
+    const text = (inpExtractText?.value || '').trim();
+    const sourceType = inpExtractType?.value || 'client_note';
+    const sender = (inpExtractSender?.value || '').trim();
+    const channel = (inpExtractChannel?.value || '').trim();
+
+    if (!file && !text) {
+      alert('Please upload a file (.pdf, .png, .jpg) or enter text to extract.');
+      return;
+    }
+
+    if (btnRunExtract) {
+      btnRunExtract.disabled = true;
+      btnRunExtract.textContent = 'Extracting and verifying claims…';
+    }
+
+    try {
+      let res;
+      if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('source_type', sourceType);
+        if (text) formData.append('text', text);
+        if (sender) formData.append('sender', sender);
+        if (channel) formData.append('channel', channel);
+        res = await fetch('/api/extract', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        res = await fetch('/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_type: sourceType,
+            text: text,
+            sender: sender || null,
+            channel: channel || null,
+          }),
+        });
+      }
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert('Extraction failed: ' + (data.error?.message || 'Server error'));
+        return;
+      }
+
+      if (data.state) {
+        appState = data.state;
+        renderAllModules(appState);
+      }
+
+      if (extractReceiptsContainer && extractReceiptsList) {
+        extractReceiptsContainer.style.display = 'block';
+        const ext = data.extraction || {};
+        if (extractMetaTag) {
+          extractMetaTag.textContent = `${ext.route || ext.mode} • ${ext.model || 'model'} • ${ext.latency_ms || 0}ms`;
+        }
+        const receipts = data.receipts || [];
+        const claims = data.claims || [];
+        if (receipts.length === 0 && claims.length === 0) {
+          extractReceiptsList.innerHTML = `<p style="font-size: 13px; color: var(--crimson-text); margin: 6px 0;">No claims extracted. Reason: ${escapeHtml(ext.reason || 'Offline or no claims found in input')}</p>`;
+        } else {
+          extractReceiptsList.innerHTML = receipts.map(r => {
+            const isOk = r.status === 'verified';
+            const badgeCls = isOk ? 'indicator-valid' : 'indicator-invalid';
+            const badgeTxt = isOk ? '✓ VERIFIED' : '✗ REJECTED / UNVERIFIED';
+            return `
+              <div style="background: var(--surface-card); border: 1px solid var(--border-light); padding: 10px; border-radius: var(--radius-sm); margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <strong style="font-size: 13px;">${escapeHtml(r.claim_id)}</strong>
+                  <span class="${badgeCls}">${badgeTxt}</span>
+                </div>
+                ${r.source_id ? `<p style="margin: 2px 0; font-size: 12px;"><strong>Source ID:</strong> <code>${escapeHtml(r.source_id)}</code></p>` : ''}
+                ${r.observation ? `<p style="margin: 2px 0; font-size: 12px; color: var(--text-muted);">${escapeHtml(r.observation)}</p>` : ''}
+                ${r.error ? `<p style="margin: 2px 0; font-size: 12px; color: var(--crimson-text);"><strong>Rejection Rationale:</strong> ${escapeHtml(r.error)}</p>` : ''}
+                <p style="margin: 2px 0; font-size: 11px; color: var(--text-muted);">Governing Authority: <strong>${r.governing ? 'YES (Admitted to BRD)' : 'NO (Observation Only)'}</strong></p>
+              </div>
+            `;
+          }).join('');
+        }
+      }
+      refreshCloudStatus();
+      showToast(`Extraction complete: ${data.receipts?.length || 0} claims processed through validation pipeline.`);
+    } catch (err) {
+      alert('Error during extraction: ' + err.message);
+    } finally {
+      if (btnRunExtract) {
+        btnRunExtract.disabled = false;
+        btnRunExtract.textContent = 'Σ Extract & Validate with Gemini (/api/extract)';
+      }
+    }
+  });
+
   // --------------------------------------------------------------------------
   // Scenario presets: each step is a real POST /api/ingest through the same
   // validation boundary as the manual form. Rejections are reported, not hidden.
@@ -1282,6 +1391,7 @@
         <td><strong>#${entry.sequence}</strong></td>
         <td>${actionSpan}</td>
         <td><code>${escapeHtml(entry.source_id)}</code></td>
+        <td style="font-size: 12px;">${escapeHtml(entry.sender || '—')} ${entry.channel ? `<small style="color: var(--text-muted);">(${escapeHtml(entry.channel)})</small>` : ''}</td>
         <td style="font-family: var(--font-mono); font-size: 11px; color: var(--emerald-text);">${escapeHtml(entry.hash.slice(0, 16))}...${escapeHtml(entry.hash.slice(-8))}</td>
         <td style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${escapeHtml(entry.prev_hash.slice(0, 12))}...</td>
         <td><span class="brand-badge integrity-pending" data-integrity="${entry.sequence}">UNCHECKED</span></td>
@@ -1448,15 +1558,28 @@
           el.classList.toggle('connected', !!st.connected);
           el.title = `${key}: ${st.connected ? 'connected' : 'local mirror active'} — ${st.reason || ''}`;
         }
-        // Keep the extraction pill honest on load too (beats refresh it later).
-        if (data.extraction && extractionModeText) {
-          const mode = data.extraction.mode;
-          if (mode === 'live') {
-            extractionModeText.textContent = 'EXTRACTION: LIVE GEMINI';
+        // True route pill and failure reason (Task 3)
+        const route = data.route || (data.extraction && data.extraction.route) || 'offline';
+        const failReason = data.last_failure_reason || (data.extraction && data.extraction.last_failure_reason);
+        const studioRoutePill = document.querySelector('#studio-route-pill');
+        if (studioRoutePill) {
+          studioRoutePill.textContent = `ROUTE: ${route.toUpperCase()}`;
+          studioRoutePill.className = 'brand-badge ' + (route.startsWith('live') ? 'integrity-ok' : '');
+          if (failReason) studioRoutePill.title = `Last failure: ${failReason}`;
+        }
+        if (extractionModeText) {
+          if (route === 'live-gemini') {
+            extractionModeText.textContent = 'ROUTE: LIVE-GEMINI';
             extractionModePill?.classList.add('live');
-          } else if (mode === 'live (vertex)') {
-            extractionModeText.textContent = 'EXTRACTION: LIVE GEMINI (VERTEX AI)';
+          } else if (route === 'live-vertex') {
+            extractionModeText.textContent = 'ROUTE: LIVE-VERTEX';
             extractionModePill?.classList.add('live');
+          } else {
+            extractionModeText.textContent = 'ROUTE: OFFLINE' + (failReason ? ` (${failReason.slice(0, 30)})` : '');
+            extractionModePill?.classList.remove('live');
+          }
+          if (extractionModePill) {
+            extractionModePill.title = `True route: ${route}${failReason ? ` | Reason: ${failReason}` : ''}`;
           }
         }
       })
@@ -1494,6 +1617,7 @@
           </div>
           ${shot}
           <p class="prov-quote">&ldquo;${escapeHtml(s.quote)}&rdquo;</p>
+          ${s.sender ? `<p style="font-size: 11px; color: var(--text-muted); margin: 3px 0;"><strong>Sender:</strong> ${escapeHtml(s.sender)} ${s.channel ? `&bull; <strong>Channel:</strong> ${escapeHtml(s.channel)}` : ''}</p>` : ''}
           <p class="prov-meta">${s.quote_verified ? '\u2713 Quote verified against source' : '\u26A0 Quote unverified'}${governing ? ' \u2022 GOVERNING' : ''}</p>
         </div>`;
     }).join('');
