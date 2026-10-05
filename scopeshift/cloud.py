@@ -136,11 +136,29 @@ class BigQueryLog:
             return False
         try:
             seq, source_id, event_name = _event_fields(event)
+            payload_data = None
+            if isinstance(event, dict):
+                payload_data = event.get("payload")
+            else:
+                payload_data = getattr(event, "payload", None)
+
+            if payload_data is None:
+                payload_data = {"source_id": source_id, "event": event_name}
+
+            if isinstance(payload_data, str):
+                try:
+                    json.loads(payload_data)
+                    payload_str = payload_data
+                except Exception:
+                    payload_str = json.dumps({"raw": payload_data})
+            else:
+                payload_str = json.dumps(payload_data)
+
             row = {
                 "event_sequence": seq,
                 "source_id": source_id,
                 "event": event_name,
-                "payload": json.dumps({"source_id": source_id, "event": event_name}),
+                "payload": payload_str,
                 "inserted_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
             errors = self._client.insert_rows_json(
@@ -153,6 +171,39 @@ class BigQueryLog:
         except Exception:
             log.warning("BigQuery append failed (local log unaffected)", exc_info=True)
             return False
+
+    def verify_read_back(self, event_sequence: int) -> Optional[dict]:
+        """Read back an event row by event_sequence to verify BigQuery persistence."""
+        if not self._connected or self._client is None:
+            return None
+        try:
+            query = (
+                f"SELECT event_sequence, source_id, event, payload, inserted_at "
+                f"FROM `{self.dataset_id}.{self.table_id}` "
+                f"WHERE event_sequence = {int(event_sequence)} "
+                f"LIMIT 1"
+            )
+            query_job = self._client.query(query)
+            rows = list(query_job.result())
+            if rows:
+                r = rows[0]
+                payload_val = r.get("payload") if hasattr(r, "get") else getattr(r, "payload", None)
+                if isinstance(payload_val, str):
+                    try:
+                        payload_val = json.loads(payload_val)
+                    except Exception:
+                        pass
+                return {
+                    "event_sequence": r.get("event_sequence") if hasattr(r, "get") else getattr(r, "event_sequence", None),
+                    "source_id": r.get("source_id") if hasattr(r, "get") else getattr(r, "source_id", None),
+                    "event": r.get("event") if hasattr(r, "get") else getattr(r, "event", None),
+                    "payload": payload_val,
+                    "inserted_at": str(r.get("inserted_at") if hasattr(r, "get") else getattr(r, "inserted_at", None)),
+                }
+            return None
+        except Exception as exc:
+            log.warning("BigQuery verify_read_back failed: %s", exc)
+            return None
 
 
 class GCSOriginals:
@@ -231,9 +282,9 @@ class GCSOriginals:
 
 
 class VertexExtractor:
-    """Gemini extraction routed through the Vertex AI endpoint.
+    """Gemini extraction routed through the Vertex AI endpoint using google-genai SDK.
 
-    Requires the google-cloud-aiplatform SDK plus GOOGLE_CLOUD_PROJECT and
+    Requires the google-genai SDK with vertexai=True plus GOOGLE_CLOUD_PROJECT and
     GOOGLE_CLOUD_LOCATION. Otherwise ``extract_claims`` returns None and the
     caller falls back to the google-genai path / deterministic fallback.
     """
@@ -247,30 +298,39 @@ class VertexExtractor:
         self.project = project or os.environ.get(GCP_PROJECT_ENV)
         self.location = location or os.environ.get(GCP_LOCATION_ENV)
         self.model = model
-        self._model = None
+        self._client = None
         self._connected = False
         self._reason = "not initialized"
         self._try_connect()
 
     def _try_connect(self) -> None:
         try:
-            if not (_sdk_available("vertexai") or _sdk_available("google.cloud.aiplatform")):
-                self._reason = "sdk not installed (pip install google-cloud-aiplatform)"
+            if not _sdk_available("google.genai"):
+                self._reason = "sdk not installed (pip install google-genai)"
                 return
             if not self.project or not self.location:
                 missing = [e for e, v in ((GCP_PROJECT_ENV, self.project), (GCP_LOCATION_ENV, self.location)) if not v]
                 self._reason = f"env {'/'.join(missing)} unset"
                 return
-            import vertexai
-            from vertexai.generative_models import GenerativeModel
+            try:
+                creds, adc_project = _default_credentials()
+            except Exception:
+                self._reason = _NO_CRED_REASON
+                return
 
-            # Local config only — no network at init.
-            vertexai.init(project=self.project, location=self.location)
-            self._model = GenerativeModel(self.model)
+            from google import genai
+
+            project = self.project or adc_project
+            self._client = genai.Client(
+                vertexai=True,
+                project=project,
+                location=self.location,
+                credentials=creds,
+            )
             self._connected = True
             self._reason = "ok"
         except Exception as exc:  # pragma: no cover - connection-time failures
-            self._model = None
+            self._client = None
             self._connected = False
             self._reason = f"connection failed: {type(exc).__name__}"
             log.warning("VertexExtractor unavailable: %s", self._reason)
@@ -280,19 +340,36 @@ class VertexExtractor:
 
     def extract_claims(self, text: str, source_type: str, prompt: str) -> Optional[dict]:
         """Run extraction via the Vertex endpoint. None on any failure."""
-        if not self._connected or self._model is None:
+        if not self._connected or self._client is None:
             return None
         import time
+        from google.genai import types
+        from .extraction import ClaimExtractionSchema
 
         start = time.time()
         try:
-            resp = self._model.generate_content(
-                f"{prompt}\nSource Type: {source_type}\nText:\n{text}",
-                generation_config={"response_mime_type": "application/json"},
+            cfg = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=list[ClaimExtractionSchema],
             )
-            claims = json.loads(resp.text)
+            resp = self._client.models.generate_content(
+                model=self.model,
+                contents=[f"{prompt}\nSource Type: {source_type}\nText:\n{text}"],
+                config=cfg,
+            )
+            raw_text = getattr(resp, "text", None) or ""
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, dict) and "claims" in parsed:
+                raw_claims = parsed["claims"]
+            elif isinstance(parsed, list):
+                raw_claims = parsed
+            elif isinstance(parsed, dict):
+                raw_claims = [parsed]
+            else:
+                raw_claims = []
+
             return {
-                "claims": claims,
+                "claims": raw_claims,
                 "latency_ms": round((time.time() - start) * 1000, 2),
                 "model": f"{self.model} (vertex)",
             }

@@ -240,3 +240,82 @@ def test_effective_extraction_mode_offline():
     from scopeshift.extraction import Extractor
     ex = Extractor()  # no key, no vertex env -> deterministic
     assert ex.effective_mode() == "deterministic-fallback"
+
+
+def test_vertex_extractor_mocked_genai(monkeypatch):
+    from unittest.mock import MagicMock
+    from scopeshift.cloud import VertexExtractor
+    from scopeshift.extraction import ClaimExtractionSchema
+
+    vx = VertexExtractor()
+    mock_client = MagicMock()
+    mock_resp = MagicMock()
+    mock_resp.text = json.dumps([
+        {
+            "claim_id": "checkout.payment_methods",
+            "observation": "BRD specifies UPI only",
+            "quote": "REQ-PAY-01: UPI only",
+            "proposed_scope_change": False,
+            "value": {"methods": ["UPI"]},
+        }
+    ])
+    mock_client.models.generate_content.return_value = mock_resp
+
+    monkeypatch.setattr(vx, "_client", mock_client)
+    monkeypatch.setattr(vx, "_connected", True)
+
+    res = vx.extract_claims("sample text", "brd", "Test prompt")
+    assert res is not None
+    assert len(res["claims"]) == 1
+    assert res["claims"][0]["claim_id"] == "checkout.payment_methods"
+    assert "vertex" in res["model"]
+
+    call_args, call_kwargs = mock_client.models.generate_content.call_args
+    cfg = call_kwargs["config"]
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.response_schema == list[ClaimExtractionSchema]
+
+
+def test_bigquery_verify_read_back(monkeypatch):
+    from unittest.mock import MagicMock
+    from scopeshift.cloud import BigQueryLog
+
+    bq = BigQueryLog()
+    mock_client = MagicMock()
+    mock_row = MagicMock()
+    mock_row.get.side_effect = lambda k: {
+        "event_sequence": 123,
+        "source_id": "SRC-01",
+        "event": "ADDED",
+        "payload": '{"test": true}',
+        "inserted_at": "2026-10-05T00:00:00Z",
+    }.get(k)
+
+    mock_job = MagicMock()
+    mock_job.result.return_value = [mock_row]
+    mock_client.query.return_value = mock_job
+
+    monkeypatch.setattr(bq, "_client", mock_client)
+    monkeypatch.setattr(bq, "_connected", True)
+    monkeypatch.setattr(bq, "dataset_id", "test_ds")
+    monkeypatch.setattr(bq, "table_id", "scopeshift_events")
+
+    row = bq.verify_read_back(123)
+    assert row is not None
+    assert row["event_sequence"] == 123
+    assert row["source_id"] == "SRC-01"
+    assert row["payload"] == {"test": True}
+
+
+def test_verify_cloud_script_fails_without_credentials():
+    import subprocess
+    import sys
+
+    res = subprocess.run(
+        [sys.executable, "scripts/verify_cloud.py"],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode == 1
+    assert "MISSING GOOGLE CLOUD CONFIGURATION / CREDENTIALS" in res.stdout
+    assert "GOOGLE_CLOUD_PROJECT" in res.stdout

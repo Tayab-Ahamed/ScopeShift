@@ -206,6 +206,15 @@ def _ingest_text_evidence(store: EventStore, *, source_type: str, claim_id: str,
     )
     store.seed([item])
     _store_event(store, sid, "ADDED")
+    if GCS.status().get("connected"):
+        if image_bytes:
+            art_name = f"{sid}.png"
+            GCS.upload(art_name, image_bytes, content_type="image/png")
+            _SOURCE_ARTIFACT_FILES[sid] = art_name
+        elif text:
+            art_name = f"{sid}.txt"
+            GCS.upload(art_name, text.encode("utf-8"), content_type="text/plain")
+            _SOURCE_ARTIFACT_FILES[sid] = art_name
     return sid, v, item
 
 
@@ -357,11 +366,23 @@ def _stream_feed(handler: "Handler", loop: bool) -> None:
         logging.exception("Feed stream failed")
 
 
+_SOURCE_ARTIFACT_FILES: dict[str, str] = {}
+_SOURCE_TYPE_FILES = {"brd": "brd.pdf", "screenshot": "checkout.png", "client_note": "client_note.txt"}
+
+
 def artifact_url(source_id: str) -> dict | None:
     """Artifact URL for the inspector: signed GCS URL when connected, else local.
 
     Returns {"url": ..., "via": "gcs" | "local"}, or None for unknown sources.
     """
+    if source_id in _SOURCE_ARTIFACT_FILES:
+        filename = _SOURCE_ARTIFACT_FILES[source_id]
+        if GCS.status()["connected"]:
+            signed = GCS.signed_url(filename)
+            if signed:
+                return {"url": signed, "via": "gcs"}
+        return {"url": f"/fixtures/{filename}", "via": "local"}
+
     sources = {s["id"]: s["type"] for s in STORE.snapshot()["sources"]}
     source_type = sources.get(source_id)
     filename = _SOURCE_TYPE_FILES.get(source_type) if source_type else None
@@ -372,9 +393,6 @@ def artifact_url(source_id: str) -> dict | None:
         if signed:
             return {"url": signed, "via": "gcs"}
     return {"url": f"/fixtures/{filename}", "via": "local"}
-
-
-_SOURCE_TYPE_FILES = {"brd": "brd.pdf", "screenshot": "checkout.png", "client_note": "client_note.txt"}
 
 demo_store = create_demo_store
 STORE: EventStore = create_demo_store(os.environ.get("SCOPESHIFT_DB", DEFAULT_DB_PATH))
@@ -894,6 +912,17 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     STORE.seed([item])
                     _store_event(STORE, sid, "ADDED", sender=v["sender"], channel=v["channel"])
+                    if GCS.status().get("connected"):
+                        if file_bytes:
+                            ext = ".pdf" if is_pdf else (".png" if is_png else (".jpg" if is_jpeg else ".bin"))
+                            art_name = f"{sid}{ext}"
+                            mime = "application/pdf" if is_pdf else ("image/png" if is_png else ("image/jpeg" if is_jpeg else "application/octet-stream"))
+                            GCS.upload(art_name, file_bytes, content_type=mime)
+                            _SOURCE_ARTIFACT_FILES[sid] = art_name
+                        elif doc_text:
+                            art_name = f"{sid}.txt"
+                            GCS.upload(art_name, doc_text.encode("utf-8"), content_type="text/plain")
+                            _SOURCE_ARTIFACT_FILES[sid] = art_name
                     receipts.append({
                         "claim_id": v["claim_id"],
                         "source_id": sid,
