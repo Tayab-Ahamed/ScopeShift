@@ -178,9 +178,9 @@ def validate_claim(
             raise ValidationError("source text is required to verify quotes")
         verified = quote_in_text(quote, text)
 
-    sender_val = raw.get("sender")
-    channel_val = raw.get("channel")
-    received_at_val = raw.get("received_at")
+    sender_val = sender if sender is not None else raw.get("sender")
+    channel_val = channel if channel is not None else raw.get("channel")
+    received_at_val = received_at if received_at is not None else raw.get("received_at")
     if not sender_val and text:
         for line in text.splitlines():
             line_s = line.strip()

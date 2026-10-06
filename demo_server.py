@@ -3,11 +3,15 @@ Serves the responsive single-screen UI, Three.js 3D topology, and REST API.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import os
+import queue
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -96,6 +100,60 @@ def check_rate_limit(client_ip: str, limit_per_minute: int = 30) -> tuple[bool, 
 def reset_rate_limits() -> None:
     with _RATE_LIMIT_LOCK:
         _RATE_LIMIT_STORE.clear()
+
+
+_PROCESSED_WEBHOOK_IDS: set[str] = set()
+_WEBHOOK_LOCK = threading.Lock()
+
+
+def reset_processed_webhooks() -> None:
+    with _WEBHOOK_LOCK:
+        _PROCESSED_WEBHOOK_IDS.clear()
+
+
+def parse_webhook_timestamp(val) -> float | None:
+    if not val:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        try:
+            clean = val.strip()
+            if clean.endswith("Z"):
+                clean = clean[:-1] + "+00:00"
+            return datetime.fromisoformat(clean).timestamp()
+        except Exception:
+            try:
+                return float(val)
+            except ValueError:
+                return None
+    return None
+
+
+_SSE_SUBSCRIBERS: list[queue.Queue] = []
+_SSE_SUBSCRIBERS_LOCK = threading.Lock()
+
+
+def subscribe_sse() -> queue.Queue:
+    q = queue.Queue(maxsize=100)
+    with _SSE_SUBSCRIBERS_LOCK:
+        _SSE_SUBSCRIBERS.append(q)
+    return q
+
+
+def unsubscribe_sse(q: queue.Queue) -> None:
+    with _SSE_SUBSCRIBERS_LOCK:
+        if q in _SSE_SUBSCRIBERS:
+            _SSE_SUBSCRIBERS.remove(q)
+
+
+def push_sse_event(event_name: str, payload: dict) -> None:
+    with _SSE_SUBSCRIBERS_LOCK:
+        for q in list(_SSE_SUBSCRIBERS):
+            try:
+                q.put_nowait((event_name, payload))
+            except Exception:
+                pass
 
 
 MUTATING_PATHS = {
@@ -1086,6 +1144,130 @@ class Handler(BaseHTTPRequestHandler):
                     "reason": extract_res.reason,
                     "error_type": extract_res.error_type,
                 },
+                "state": STORE.snapshot(),
+            }, 200)
+            return
+
+        if path == "/api/webhook/inbound":
+            webhook_secret = os.environ.get("SCOPESHIFT_WEBHOOK_SECRET")
+            sig_header = (
+                self.headers.get("X-ScopeShift-Signature")
+                or self.headers.get("X-Signature-256")
+                or self.headers.get("X-Hub-Signature-256")
+                or ""
+            )
+            if not webhook_secret or not sig_header:
+                self.send_json({"error": {"code": "UNAUTHORIZED", "message": "Missing webhook signature or server secret"}}, 401)
+                return
+
+            expected_sig = hmac.new(webhook_secret.encode("utf-8"), body_bytes, hashlib.sha256).hexdigest()
+            clean_sig = sig_header.removeprefix("sha256=").strip()
+            if not hmac.compare_digest(clean_sig, expected_sig):
+                self.send_json({"error": {"code": "UNAUTHORIZED", "message": "Invalid webhook HMAC signature"}}, 401)
+                return
+
+            received_at_raw = data.get("received_at")
+            ts = parse_webhook_timestamp(received_at_raw)
+            now = time.time()
+            if ts is None or abs(now - ts) > 300:
+                self.send_json({"error": {"code": "STALE_TIMESTAMP", "message": "Message timestamp expired or invalid (> 5 minutes drift)"}}, 401)
+                return
+
+            message_id = str(data.get("message_id") or "")
+            if not message_id:
+                message_id = hashlib.sha256(body_bytes).hexdigest()
+
+            with _WEBHOOK_LOCK:
+                if message_id in _PROCESSED_WEBHOOK_IDS:
+                    self.send_json({"error": {"code": "DUPLICATE_MESSAGE", "message": f"Message ID '{message_id}' already processed (replay rejected)"}}, 409)
+                    return
+                _PROCESSED_WEBHOOK_IDS.add(message_id)
+
+            channel = str(data.get("channel") or "webhook")
+            sender = str(data.get("sender") or "unknown")
+            text = str(data.get("text") or "")
+
+            extract_res = EXTRACTOR.extract_from_text(text, source_type="client_note")
+            receipts = []
+
+            for claim in extract_res.claims:
+                try:
+                    v = validate_claim(
+                        claim,
+                        "client_note",
+                        text=text,
+                        sender=sender,
+                        channel=channel,
+                        received_at=str(received_at_raw),
+                    )
+                    sid = get_next_source_id(STORE)
+                    max_seq = STORE.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+
+                    governs = bool(v.get("proposed_scope_change")) and bool(v.get("quote_verified")) and is_sender_allowlisted(sender, channel)
+
+                    item = Evidence(
+                        source_id=sid,
+                        source_type="client_note",
+                        claim_id=v["claim_id"],
+                        value=v["value"],
+                        quote=v["quote"],
+                        observation=v["observation"],
+                        proposed_scope_change=v["proposed_scope_change"],
+                        quote_verified=v["quote_verified"],
+                        region=v.get("region"),
+                        event_sequence=max_seq,
+                        active=False,
+                        sender=sender,
+                        channel=channel,
+                        received_at=str(received_at_raw),
+                    )
+                    STORE.seed([item])
+                    ev_payload = {
+                        "source_id": sid,
+                        "claim_id": v["claim_id"],
+                        "sender": sender,
+                        "channel": channel,
+                        "received_at": str(received_at_raw),
+                        "message_id": message_id,
+                        "governing": governs,
+                    }
+                    _store_event(STORE, sid, "ADDED", sender=sender, channel=channel, payload=ev_payload)
+
+                    receipt = {
+                        "source_id": sid,
+                        "claim_id": v["claim_id"],
+                        "status": "verified" if v["quote_verified"] else "unverified",
+                        "governing": governs,
+                        "observation": v["observation"],
+                        "quote": v["quote"],
+                        "sender": sender,
+                        "channel": channel,
+                    }
+                    receipts.append(receipt)
+
+                    push_sse_event("webhook-arrival", {
+                        "source_id": sid,
+                        "claim_id": v["claim_id"],
+                        "channel": channel,
+                        "sender": sender,
+                        "governing": governs,
+                        "quote_verified": v["quote_verified"],
+                        "observation": v["observation"],
+                    })
+                except Exception as exc:
+                    logging.warning("Webhook claim validation error: %s", exc)
+                    receipts.append({
+                        "claim_id": claim.get("claim_id"),
+                        "source_id": None,
+                        "status": "rejected",
+                        "error": str(exc),
+                    })
+
+            self.send_json({
+                "ok": True,
+                "message_id": message_id,
+                "claims_processed": len(receipts),
+                "receipts": receipts,
                 "state": STORE.snapshot(),
             }, 200)
             return
