@@ -8,7 +8,7 @@
 
 [![Track](https://img.shields.io/badge/Commudle%20Phase%202-Problem%20Statement%2042%20(P42)-orange?style=flat-square)](#problem-statement-alignment-p42)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/Tests-116%2F116%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-151%2F151%20passed%20(100%25)-emerald?style=flat-square&logo=pytest&logoColor=white)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-Fail--Closed%20Deterministic-blueviolet?style=flat-square)](#the-governed-pipeline)
 [![Audit](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash--Chained-success?style=flat-square)](#immutable-event-ledger)
 [![Cloud Mirrors](https://img.shields.io/badge/Cloud%20Dual--Write-BigQuery%20%7C%20GCS%20%7C%20Vertex-informational?style=flat-square&logo=googlecloud&logoColor=white)](#enterprise-cloud-architecture)
@@ -112,11 +112,17 @@ ScopeShift is fail-closed and works completely offline without network or creden
 
 ### One-Command Quickstart
 ```bash
+# Automated launcher (starts server, polls /api/health, opens browser)
+python run_demo.py
+# or Windows PowerShell:
+.\run_demo.ps1
+# or direct server launch:
 pip install -r requirements.txt && python demo_server.py
 ```
 Open **`http://localhost:8765`** in your browser.
 
 - **Persistence Mode:** Persistence is enabled by default to `./events.db` (`SCOPESHIFT_DB` env var). `/api/health` reports `{"persisted": true}`.
+- **Demo Safe Mode:** Toggle the **`🛡 Safe Mode`** button in the header (or launch with `--safe-mode`) to force deterministic offline fallback on stage for 100% resilient presentations.
 - **Keyboard Shortcuts:** Press `1`, `2`, or `3` to instantly step through the 3 governance stages.
 - **Automated Walkthrough:** Click `▶ Automated Walkthrough` in the header for a timed automated walkthrough.
 
@@ -131,6 +137,11 @@ When `GEMINI_API_KEY` is available, verify live multimodal extraction (text, PDF
 python scripts/smoke_live.py
 ```
 
+To run concurrent scale stress testing (e.g. 50 requests across 10 threads) with cryptographic chain validation:
+```bash
+python scripts/load_test.py -n 50 -t 10
+```
+
 To verify Google Cloud service connectivity (Vertex AI, Cloud Storage, BigQuery):
 ```bash
 python scripts/verify_cloud.py
@@ -143,7 +154,11 @@ ScopeShift is built **fail-safe and offline-first**. All features function local
 # Gemini model settings (defaults to gemini-3.6-flash, fallback: gemini-3.5-flash)
 export GEMINI_API_KEY="your-gemini-api-key"
 export SCOPESHIFT_GEMINI_MODEL="gemini-3.6-flash"
-export SCOPESHIFT_GEMINI_FALLBACKS="gemini-3.5-flash"
+export SCOPESHIFT_GEMINI_FALLBACKS="gemini-3.5-flash,gemini-2.5-flash"
+
+# Optional shared-secret auth & webhook secret
+export SCOPESHIFT_API_TOKEN="optional-bearer-token"
+export SCOPESHIFT_WEBHOOK_SECRET="optional-webhook-secret"
 
 # Google Cloud Platform settings
 export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
@@ -168,6 +183,11 @@ Check connection status at any time via `GET /api/cloud/status` or the live back
 | [`tests/test_api.py`](tests/test_api.py) | `/api/extract` multipart/base64 ingestion, receipts, route reporting, and server configuration. |
 | [`tests/test_screenshot.py`](tests/test_screenshot.py) | Real PNG/JPEG image dimension headers, Pillow crop transcription, and fail-closed quote verification. |
 | [`tests/test_approvers.py`](tests/test_approvers.py) | Approver allowlist (`approvers.json`), sender authentication, and non-authorized sender demotion. |
+| [`tests/test_security.py`](tests/test_security.py) | 10 MB payload ceiling (413), byte-sniffed MIME allowlist (415), Bearer auth (401), rate limiting (429), and XSS sanitization. |
+| [`tests/test_webhook.py`](tests/test_webhook.py) | Inbound webhook (`POST /api/webhook/inbound`), HMAC-SHA256 signature, 5-min timestamp drift check, replay protection, and SSE broadcast. |
+| [`tests/test_pdf_scan.py`](tests/test_pdf_scan.py) | Low-text scanned PDF detection, `pypdfium2` image rendering, and fail-closed visual crop re-read verification. |
+| [`tests/test_concurrency.py`](tests/test_concurrency.py) | SQLite WAL mode, busy timeout, and process-wide write lock preserving monotonic sequence and 100% SHA-256 chain integrity under 20 concurrent threads. |
+| [`tests/test_safe_mode.py`](tests/test_safe_mode.py) | Demo Safe Mode toggle (`/api/demo/safe-mode`) enforcing deterministic offline route and automated launcher healthcheck polling. |
 | [`tests/test_cloud.py`](tests/test_cloud.py) | `google-genai` Vertex AI adapter, BigQuery read-back, GCS artifact upload, and signed URL generation. |
 | [`tests/test_benchmark.py`](tests/test_benchmark.py) | ScopeShift vs Plain Gemini benchmark harness and fail-closed missing key handling. |
 | [`tests/test_citation_enforcement.py`](tests/test_citation_enforcement.py) | Verbatim citation verification and fail-closed rejection of unverified evidence. |

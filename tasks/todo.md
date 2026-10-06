@@ -11,7 +11,7 @@
 ## Task Progress
 
 - [x] **TASK 1 - Repo Hygiene & Clean Slate**
-  - [x] Add `requirements.txt` (`google-genai`, `pypdf`, `Pillow`, `google-cloud-bigquery`, `google-cloud-storage`, `pytest`)
+  - [x] Add `requirements.txt` (`google-genai`, `pypdf`, `pypdfium2`, `Pillow`, `google-cloud-bigquery`, `google-cloud-storage`, `pytest`)
   - [x] Add `.env.example` with all configuration variables (`GEMINI_API_KEY`, `SCOPESHIFT_DB`, etc.)
   - [x] Make persistence the default (`SCOPESHIFT_DB` defaults to `./events.db`, `/api/health` reports `persisted: true`)
   - [x] Clean obsolete directories (`.ppt-build/`, `preview/`, `baseline_out/`, `build_deck.py`)
@@ -78,3 +78,55 @@
 - [x] **TASK 9 - Docs Truth Pass & Claims Evidence Matrix**
   - [x] Synchronize `README.md`, `PRESENTER.md`, `tasks/todo.md` with test proofs
   - [x] Create `CLAIMS_EVIDENCE.md` matrix mapping every claim to test file, test name, and verification command
+
+- [x] **TASK A - Live Gemini Verification & Quota Failover**
+  - [x] Fix `ClaimExtractionSchema` to use `model_config = {"extra": "ignore"}` for Gemini Developer API compatibility
+  - [x] Multi-model auto-failover on HTTP 404, 429, 503, `"resource_exhausted"`, `"quota exceeded"` (`gemini-3.6-flash` -> `gemini-3.5-flash` -> `gemini-2.5-flash`)
+  - [x] Live smoke run executed via `scripts/smoke_live.py`: passed for text, PDF, and image modalities
+  - [x] Logged latencies and answering models in `docs/LIVE_RUN_LOG.md`
+  - [x] Automated tests passing & committed (`6bbf45f`)
+
+- [x] **TASK B - Security & Input Hardening**
+  - [x] Enforce 10 MB maximum request upload ceiling with 413 JSON error
+  - [x] Byte-sniffed MIME allowlist (`sniff_mime_type`) with 415 JSON error on disallowed formats
+  - [x] Optional shared-secret Bearer auth (`SCOPESHIFT_API_TOKEN`) on all mutating endpoints with 401 error
+  - [x] Per-IP rate limiting on `/api/extract` (default 30/min, `SCOPESHIFT_RATE_LIMIT_PER_MINUTE`) with 429 and `retry_after`
+  - [x] InnerHTML XSS audit: sanitization of citations, filenames, and quotes; tested inertness
+  - [x] Automated tests passing & committed (`0a4cd71`)
+
+- [x] **TASK C - Real-Time Fragmented Intake (Webhook)**
+  - [x] Endpoint `POST /api/webhook/inbound` for fragmented message intake (channel, sender, text, received_at)
+  - [x] HMAC-SHA256 signature verification with `SCOPESHIFT_WEBHOOK_SECRET` and 401 rejection
+  - [x] Replay attack prevention via unique message ID set (409) and 5-minute timestamp drift check (401)
+  - [x] Routing through Extractor, validation, approver allowlist, and monotonic hash chain
+  - [x] SSE push on `webhook-arrival` for live UI updates
+  - [x] Testing script `scripts/send_webhook.py` and comprehensive unit tests (`tests/test_webhook.py`)
+  - [x] Automated tests passing & committed (`bf96c1d`)
+
+- [x] **TASK D - Scanned PDF Handling**
+  - [x] Detect scanned PDFs with near-zero extractable digital text (< 50 chars)
+  - [x] Render PDF pages to PNG images using `pypdfium2` (`render_pdf_page_to_image`)
+  - [x] Re-read visual bounding crops with separate transcriber call and deterministic code string match
+  - [x] Fail-closed verification: unverified quotes if rendering or transcriber is offline/fails
+  - [x] Added `pypdfium2` to `requirements.txt` and tests in `tests/test_pdf_scan.py`
+  - [x] Automated tests passing & committed (`a3538b6`)
+
+- [x] **TASK E - Concurrency & Scale Evidence**
+  - [x] SQLite WAL mode (`PRAGMA journal_mode = WAL`) and busy timeout (`PRAGMA busy_timeout = 5000`)
+  - [x] Process-wide reentrant write lock (`threading.RLock`) eliminating sequence collisions and torn reads in snapshots
+  - [x] Load testing tool `scripts/load_test.py`: N concurrent requests, EPS, p50/p95 latency, and hash chain verification
+  - [x] Unit test suite running 20 concurrent writes and asserting 100% chain integrity (`tests/test_concurrency.py`)
+  - [x] Documented scaling evidence, concurrency guarantees, and Cloud Run / BigQuery path in `docs/SCALING.md`
+  - [x] Automated tests passing & committed (`3caee26`)
+
+- [x] **TASK F - Container & Deploy Readiness**
+  - [x] Verified `Dockerfile` and documented Docker daemon BLOCKED state honestly in `docs/LIVE_RUN_LOG.md`
+  - [x] Created `run_demo.py` and `run_demo.ps1` with automated `/api/health` polling and browser launching
+  - [x] Added visible UI "Demo Safe Mode" toggle in navigation header forcing offline deterministic route
+  - [x] Tests in `tests/test_safe_mode.py` verifying safe mode route enforcement and healthcheck polling
+  - [x] Automated tests passing & committed (`e7932b9`)
+
+- [x] **TASK G - Docs Truth Pass & Push**
+  - [x] Comprehensive claims-to-tests evidence mapping in `CLAIMS_EVIDENCE.md`
+  - [x] Updated `README.md` and `PRESENTER.md` with complete, verified documentation
+  - [x] 151/151 tests passing in `python -m pytest -q`

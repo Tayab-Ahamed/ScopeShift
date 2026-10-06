@@ -6,11 +6,19 @@ honest no-op — the UI tells you ("press 1 to re-seed, then 2") instead of sile
 
 ## Before you present
 
-1. `python demo_server.py` → open http://localhost:8765
-2. Extraction status pill (top-right of the lifecycle navigator) reads:
-   **"EXTRACTION: DETERMINISTIC PIPELINE (VERIFIED)"**
-   *(or "EXTRACTION: GEMINI MULTI-MODAL" if live GEMINI_API_KEY is supplied).*
-3. Keyboard shortcuts: **1**, **2**, **3** = stages (**Esc** closes modals/toasts, **?** opens stage keys).
+1. **One-Command Launcher:**
+   - Linux/Mac: `python run_demo.py`
+   - Windows PowerShell: `.\run_demo.ps1` (or `python run_demo.py`)
+   - *This starts `demo_server.py`, polls `/api/health` until ready, and automatically launches your browser.*
+2. **Demo Safe Mode Toggle (Stage Safety Guarantee):**
+   - In the header navigation bar, locate the **`🛡 Safe Mode`** button.
+   - For an absolutely risk-free live presentation on stage with unpredictable conference Wi-Fi, click **`🛡 Safe Mode: ON`** (or launch with `python run_demo.py --safe-mode`).
+   - Safe Mode instantly forces the deterministic offline fallback pipeline, guaranteeing that no live API network hiccups, rate limits, or latency spikes can disrupt your presentation.
+3. **Extraction Status Pill:**
+   - Reads: **`ROUTE: OFFLINE (SAFE MODE)`**, **`ROUTE: LIVE-GEMINI`**, or **`ROUTE: OFFLINE`**.
+4. **Keyboard shortcuts:** **1**, **2**, **3** = stages (**Esc** closes modals/toasts, **?** opens stage keys).
+
+---
 
 ## The 3-Stage Story (What to say)
 
@@ -32,6 +40,8 @@ The response shows the extraction outcome: claims, per-claim validation, and the
 > *"The client withdraws the decision. The requirement drops out of the BRD — but the audit
 > trail keeps the full story: who withdrew it, when, and what it used to say."*
 
+---
+
 ## Chaos tiles (page 5, "Adversarial Stress Test Suite")
 
 Five real attacks, each executed through the actual `validate_claim` code boundary — nothing canned:
@@ -46,20 +56,36 @@ Five real attacks, each executed through the actual `validate_claim` code bounda
 
 The toast and audit panel show the exact rule that fired + resulting classification for each attack. Point at it: *"The attacker never reaches the governed BRD — the code boundary intercepts and neutralizes them first."*
 
+---
+
+## Real-Time Fragmented Intake & Ingestion Studio
+
+- **Ingestion Studio (Page 3):** Upload real documents (PDFs, screenshots, or pasted notes).
+- **Scanned PDF Handling:** If a PDF lacks digital text (scanned image), `pypdfium2` renders pages to images, transcribes them visually, and matches quotes deterministically (fails closed if unverified).
+- **Inbound Webhook Integration:** Live endpoint `POST /api/webhook/inbound` accepts external fragmented updates (Slack/email) with HMAC-SHA256 signature verification, replay protection, and SSE broadcast (`python scripts/send_webhook.py`).
+- **Concurrent Scale & Integrity:** Run `python scripts/load_test.py -n 50 -t 10` to prove that concurrent multi-threaded writes maintain strict SQLite WAL ordering and 100% cryptographic SHA-256 chain validity.
+
+---
+
 ## Route Indicator & Cloud Status
 
 The header route pill reports the true operational route:
 - **`live-gemini`**: Direct Google Gemini API extraction (`GEMINI_API_KEY` present)
 - **`live-vertex`**: Vertex AI endpoint extraction via `google-genai` SDK (`vertexai=True`)
 - **`offline`**: Deterministic offline fallback (exact SHA-256 fixture match; unknown input returns 0 claims)
+- **`offline (safe-mode)`**: Demo Safe Mode active, bypassing live models
 
 If a live extractor fails, the pill displays the exact `last_failure_reason`.
+
+---
 
 ## Recovery
 
 - **Wrong order / double-press:** you get a "no-op" toast with the hint. Press **1** to re-seed, then continue 1 → 2 → 3.
 - **Something looks off:** the **Reset** button (or POST `/api/demo/reset`) rebuilds the seed.
 - **Time-travel scrubber** (page 5): drag to any sequence number to replay the exact historical state.
+
+---
 
 ## Truth in Presentation (Lines to remember)
 

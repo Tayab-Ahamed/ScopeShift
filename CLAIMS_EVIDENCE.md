@@ -37,21 +37,29 @@ In accordance with ScopeShift Non-Negotiable Rules:
 | 22 | **Containerization & Cloud Run guide:** Dockerfile with python-slim, non-root user `scopeshift`, `/api/health` healthcheck, `.dockerignore`, `deploy/cloudrun.md` | [`Dockerfile`](Dockerfile), [`.dockerignore`](.dockerignore), [`deploy/cloudrun.md`](deploy/cloudrun.md) | Verified Dockerfile, `.dockerignore`, and Cloud Run guide | `docker build -t scopeshift .` | **DONE** |
 | 23 | **Default persistence:** `SCOPESHIFT_DB` defaults to `./events.db`, `/api/health` reports `{"persisted": true}` | [`demo_server.py`](demo_server.py), [`scopeshift/store.py`](scopeshift/store.py) | `test_health_endpoint` in [`tests/test_api.py`](tests/test_api.py) | `pytest tests/test_api.py -k test_health_endpoint` | **DONE** |
 | 24 | **Live smoke test probe:** `scripts/smoke_live.py` executes live text, PDF, and image extractions, prints model used, fails closed non-zero without API key | [`scripts/smoke_live.py`](scripts/smoke_live.py) | `test_smoke_live_script_fails_without_api_key` in [`tests/test_extraction.py`](tests/test_extraction.py) | `python scripts/smoke_live.py` | **DONE** |
+| 25 | **Security & input hardening:** 10 MB payload ceiling (413), byte-sniffed MIME allowlist (415), optional shared-secret bearer auth (`SCOPESHIFT_API_TOKEN`), per-IP rate limiting (429, default 30/min), and XSS sanitization in UI | [`demo_server.py`](demo_server.py), [`app.js`](app.js) | `tests/test_security.py` | `pytest tests/test_security.py` | **DONE** |
+| 26 | **Real-time webhook intake (`POST /api/webhook/inbound`):** HMAC-SHA256 signature verification (`SCOPESHIFT_WEBHOOK_SECRET`), 5-min timestamp drift check, replay protection, approver governance, and SSE broadcast | [`demo_server.py`](demo_server.py), [`scripts/send_webhook.py`](scripts/send_webhook.py) | `tests/test_webhook.py` | `pytest tests/test_webhook.py` | **DONE** |
+| 27 | **Scanned PDF visual verification:** detects low-text PDFs (<50 chars), renders page images with `pypdfium2`, and verifies quotes via Pillow crop + separate visual transcription call + code string match; fails closed | [`scopeshift/validation.py`](scopeshift/validation.py), [`scopeshift/extraction.py`](scopeshift/extraction.py) | `tests/test_pdf_scan.py` | `pytest tests/test_pdf_scan.py` | **DONE** |
+| 28 | **Concurrency & scale evidence:** SQLite WAL mode (`PRAGMA journal_mode = WAL`), busy timeout (5000ms), and `threading.RLock()` write serialization ensuring strictly ordered monotonic SHA-256 hash chains under concurrent writes | [`scopeshift/store.py`](scopeshift/store.py), [`scripts/load_test.py`](scripts/load_test.py), [`docs/SCALING.md`](docs/SCALING.md) | `tests/test_concurrency.py` | `pytest tests/test_concurrency.py` | **DONE** |
+| 29 | **Deploy readiness & Demo Safe Mode:** `run_demo.py` / `run_demo.ps1` with `/api/health` polling; visible UI safe mode toggle forcing deterministic offline fallback; container Dockerfile | [`run_demo.py`](run_demo.py), [`run_demo.ps1`](run_demo.ps1), [`demo_server.py`](demo_server.py), [`index.html`](index.html), [`app.js`](app.js) | `tests/test_safe_mode.py` | `pytest tests/test_safe_mode.py` | **DONE** |
 
 ---
 
-## Status of Items Blocked on External Credentials
+## Status of Items Blocked on External Credentials / Environment
 
 In accordance with project integrity constraints:
+- **Live Gemini Extraction Smoke Probe (`scripts/smoke_live.py`):**
+  - Status: **PASSED (Documented in [`docs/LIVE_RUN_LOG.md`](docs/LIVE_RUN_LOG.md))**
+  - Verification: `python scripts/smoke_live.py` executed live with text, PDF, and image inputs; all 3 modalities extracted and validated successfully (2 text claims, 3 PDF claims, 3 image claims) using Gemini API with automatic model failover.
 - **Live Google Cloud Probe Execution against Live GCP:**
   - Status: **BLOCKED ON CREDENTIALS**
   - Reason: `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_CLOUD_PROJECT` are not configured in this local environment.
   - Verification: `python scripts/verify_cloud.py` correctly identified all missing variables and exited with code `1` rather than faking a PASS.
-- **Live Gemini Extraction Smoke Probe (`scripts/smoke_live.py`):**
-  - Status: **BLOCKED ON CREDENTIALS**
-  - Reason: `GEMINI_API_KEY` is not present in this local environment.
-  - Verification: `python scripts/smoke_live.py` correctly identified missing `GEMINI_API_KEY`, printed required action, and exited with code `1`.
 - **Live Gemini Benchmark Execution (`benchmark/results.json`, `benchmark/results.md`):**
-  - Status: **BLOCKED ON CREDENTIALS**
-  - Reason: `GEMINI_API_KEY` is not present in this local environment.
-  - Verification: `python benchmark/run_benchmark.py` executed, outputted the clear required missing-key warning, and exited cleanly with code `1` without fabricating benchmark numbers.
+  - Status: **PAUSED ON QUOTA (Documented in [`docs/LIVE_RUN_LOG.md`](docs/LIVE_RUN_LOG.md))**
+  - Reason: Free-tier daily quota exhausted after live probe verification runs; continuous batch benchmarking halted.
+  - Verification: Cleanly exits with code `1` without fabricating numbers. Baseline benchmark results remain intact in `benchmark/results.md`.
+- **Docker Container Daemon Execution:**
+  - Status: **BLOCKED ON LOCAL DAEMON**
+  - Reason: Docker CLI is installed, but the local Docker Engine / Docker Desktop daemon is not running.
+  - Verification: Dockerfile, `.dockerignore`, and deployment runbooks are verified and ready for production build.
