@@ -175,18 +175,7 @@ VERTEX = VertexExtractor()
 
 
 def get_next_source_id(store: EventStore) -> str:
-    rows = store.db.execute("SELECT source_id FROM evidence").fetchall()
-    max_num = 0
-    for r in rows:
-        sid = r[0]
-        if isinstance(sid, str) and sid.startswith("SRC-"):
-            try:
-                num = int(sid.split("-")[1])
-                if num > max_num:
-                    max_num = num
-            except ValueError:
-                pass
-    return f"SRC-{max_num + 1:02d}"
+    return store.allocate_source_id()
 
 
 DEFAULT_DB_PATH = "./events.db"
@@ -325,7 +314,7 @@ def _ingest_text_evidence(store: EventStore, *, source_type: str, claim_id: str,
     )
 
     sid = get_next_source_id(store)
-    max_seq = store.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+    max_seq = store.next_created_sequence()
     item = Evidence(
         source_id=sid,
         source_type=source_type,
@@ -1087,7 +1076,7 @@ class Handler(BaseHTTPRequestHandler):
                         channel=channel,
                     )
                     sid = get_next_source_id(STORE)
-                    max_seq = STORE.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+                    max_seq = STORE.next_created_sequence()
                     item = Evidence(
                         source_id=sid,
                         source_type=source_type,
@@ -1205,7 +1194,7 @@ class Handler(BaseHTTPRequestHandler):
                         received_at=str(received_at_raw),
                     )
                     sid = get_next_source_id(STORE)
-                    max_seq = STORE.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+                    max_seq = STORE.next_created_sequence()
 
                     governs = bool(v.get("proposed_scope_change")) and bool(v.get("quote_verified")) and is_sender_allowlisted(sender, channel)
 
@@ -1505,7 +1494,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             sid = get_next_source_id(STORE)
-            max_seq = STORE.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()[0] + 1
+            max_seq = STORE.next_created_sequence()
             item = Evidence(
                 source_id=sid,
                 source_type="client_note",

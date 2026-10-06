@@ -16,13 +16,45 @@ class EventStore:
     def __init__(self, path: str | Path = ":memory:"):
         self.path = str(path)
         self.persisted = str(path) not in (":memory:", "")
-        self.db = sqlite3.connect(str(path), check_same_thread=False)
+        self.db = sqlite3.connect(str(path), check_same_thread=False, timeout=10.0)
         self.db.row_factory = sqlite3.Row
         # FR-10: sequence assignment must be atomic under the threaded demo server.
         # The lock serializes read-MAX-then-INSERT (and the replay validation between them),
         # which also serializes all use of the single shared sqlite3 connection.
-        self._event_lock = threading.Lock()
+        self._event_lock = threading.RLock()
+        self._allocated_source_num = 0
+        if self.persisted:
+            try:
+                self.db.execute("PRAGMA journal_mode = WAL;")
+            except Exception:
+                pass
+        try:
+            self.db.execute("PRAGMA busy_timeout = 5000;")
+        except Exception:
+            pass
         self._init_schema()
+
+    def next_created_sequence(self) -> int:
+        with self._event_lock:
+            row = self.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()
+            val = row[0] if (row and row[0] is not None) else 0
+            return int(val) + 1
+
+    def allocate_source_id(self) -> str:
+        with self._event_lock:
+            rows = self.db.execute("SELECT source_id FROM evidence").fetchall()
+            max_num = self._allocated_source_num
+            for r in rows:
+                sid = r["source_id"] if isinstance(r, sqlite3.Row) else r[0]
+                if isinstance(sid, str) and sid.startswith("SRC-"):
+                    try:
+                        num = int(sid.split("-")[1])
+                        if num > max_num:
+                            max_num = num
+                    except ValueError:
+                        pass
+            self._allocated_source_num = max_num + 1
+            return f"SRC-{self._allocated_source_num:02d}"
 
     def _init_schema(self) -> None:
         self.db.executescript(
@@ -72,82 +104,98 @@ class EventStore:
                 pass
 
     def seed(self, evidence: Iterable[Evidence]) -> None:
-        with self.db:
-            for item in evidence:
-                region_json = json.dumps(item.region) if item.region else None
-                self.db.execute(
-                    """
-                    INSERT OR IGNORE INTO evidence 
-                    (source_id, source_type, claim_id, value_json, quote, observation, 
-                     proposed_scope_change, quote_verified, region_json, created_sequence,
-                     sender, channel, received_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        item.source_id,
-                        item.source_type,
-                        item.claim_id,
-                        json.dumps(item.value),
-                        item.quote,
-                        item.observation,
-                        int(item.proposed_scope_change),
-                        int(item.quote_verified),
-                        region_json,
-                        item.event_sequence,
-                        item.sender,
-                        item.channel,
-                        item.received_at,
-                    ),
-                )
+        with self._event_lock:
+            with self.db:
+                row = self.db.execute("SELECT COALESCE(MAX(created_sequence), 0) FROM evidence").fetchone()
+                cur_seq = int(row[0]) if (row and row[0] is not None) else 0
+                for item in evidence:
+                    exists = self.db.execute("SELECT 1 FROM evidence WHERE source_id = ?", (item.source_id,)).fetchone()
+                    if exists:
+                        continue
+                    seq = item.event_sequence
+                    row_seq = self.db.execute("SELECT 1 FROM evidence WHERE created_sequence = ?", (seq,)).fetchone()
+                    if row_seq or seq <= 0:
+                        cur_seq += 1
+                        seq = cur_seq
+                    else:
+                        cur_seq = max(cur_seq, seq)
+
+                    region_json = json.dumps(item.region) if item.region else None
+                    self.db.execute(
+                        """
+                        INSERT INTO evidence 
+                        (source_id, source_type, claim_id, value_json, quote, observation, 
+                         proposed_scope_change, quote_verified, region_json, created_sequence,
+                         sender, channel, received_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            item.source_id,
+                            item.source_type,
+                            item.claim_id,
+                            json.dumps(item.value),
+                            item.quote,
+                            item.observation,
+                            int(item.proposed_scope_change),
+                            int(item.quote_verified),
+                            region_json,
+                            seq,
+                            item.sender,
+                            item.channel,
+                            item.received_at,
+                        ),
+                    )
 
     def _load_evidence(self) -> list[Evidence]:
-        rows = self.db.execute("SELECT * FROM evidence ORDER BY created_sequence").fetchall()
-        evidence_list = []
-        for r in rows:
-            region = json.loads(r["region_json"]) if r["region_json"] else None
-            keys = r.keys()
-            evidence_list.append(
-                Evidence(
-                    source_id=r["source_id"],
-                    source_type=r["source_type"],
-                    claim_id=r["claim_id"],
-                    value=json.loads(r["value_json"]),
-                    quote=r["quote"],
-                    observation=r["observation"],
-                    proposed_scope_change=bool(r["proposed_scope_change"]),
-                    quote_verified=bool(r["quote_verified"]),
-                    region=region,
-                    event_sequence=r["created_sequence"],
-                    active=False,
-                    sender=r["sender"] if "sender" in keys else None,
-                    channel=r["channel"] if "channel" in keys else None,
-                    received_at=r["received_at"] if "received_at" in keys else None,
+        with self._event_lock:
+            rows = self.db.execute("SELECT * FROM evidence ORDER BY created_sequence").fetchall()
+            evidence_list = []
+            for r in rows:
+                region = json.loads(r["region_json"]) if r["region_json"] else None
+                keys = r.keys()
+                evidence_list.append(
+                    Evidence(
+                        source_id=r["source_id"],
+                        source_type=r["source_type"],
+                        claim_id=r["claim_id"],
+                        value=json.loads(r["value_json"]),
+                        quote=r["quote"],
+                        observation=r["observation"],
+                        proposed_scope_change=bool(r["proposed_scope_change"]),
+                        quote_verified=bool(r["quote_verified"]),
+                        region=region,
+                        event_sequence=r["created_sequence"],
+                        active=False,
+                        sender=r["sender"] if "sender" in keys else None,
+                        channel=r["channel"] if "channel" in keys else None,
+                        received_at=r["received_at"] if "received_at" in keys else None,
+                    )
                 )
-            )
-        return evidence_list
+            return evidence_list
 
     def _load_events(self) -> list[Event]:
-        rows = self.db.execute("SELECT * FROM event_log ORDER BY event_sequence").fetchall()
-        events = []
-        for r in rows:
-            keys = r.keys()
-            payload = {}
-            if "payload_json" in keys and r["payload_json"]:
-                try:
-                    payload = json.loads(r["payload_json"])
-                except Exception:
-                    payload = {}
-            events.append(
-                Event(
-                    event_sequence=r["event_sequence"],
-                    source_id=r["source_id"],
-                    event=r["event"],
-                    sender=r["sender"] if "sender" in keys else None,
-                    channel=r["channel"] if "channel" in keys else None,
-                    payload=payload,
+        with self._event_lock:
+            rows = self.db.execute("SELECT * FROM event_log ORDER BY event_sequence").fetchall()
+            events = []
+            for r in rows:
+                keys = r.keys()
+                payload = {}
+                if "payload_json" in keys and r["payload_json"]:
+                    try:
+                        payload = json.loads(r["payload_json"])
+                    except Exception:
+                        payload = {}
+                events.append(
+                    Event(
+                        event_sequence=r["event_sequence"],
+                        source_id=r["source_id"],
+                        event=r["event"],
+                        sender=r["sender"] if "sender" in keys else None,
+                        channel=r["channel"] if "channel" in keys else None,
+                        payload=payload,
+                    )
                 )
-            )
-        return events
+            return events
 
     def add_event(
         self,
@@ -225,15 +273,16 @@ class EventStore:
         return chain
 
     def snapshot(self) -> dict:
-        evidence = self._load_evidence()
-        events = self._load_events()
-        res = replay(evidence, events)
+        with self._event_lock:
+            evidence = self._load_evidence()
+            events = self._load_events()
+            res = replay(evidence, events)
 
-        # FR-8/FR-18 fail-closed: refuse to project a BRD whose citations do not
-        # resolve to existing active evidence. Raises ValidationError; the HTTP
-        # serve path converts it into a 500 CITATION_INTEGRITY_VIOLATION rather
-        # than serving a BRD with dangling citations.
-        validate_citations(res.resolutions.values(), res.active_evidence)
+            # FR-8/FR-18 fail-closed: refuse to project a BRD whose citations do not
+            # resolve to existing active evidence. Raises ValidationError; the HTTP
+            # serve path converts it into a 500 CITATION_INTEGRITY_VIOLATION rather
+            # than serving a BRD with dangling citations.
+            validate_citations(res.resolutions.values(), res.active_evidence)
 
         # FR-8/FR-18: every citation in the served BRD projection must reference an
         # existing active evidence record; violations are flagged, never hidden.
