@@ -1041,6 +1041,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
                 is_pdf = sniffed == "application/pdf"
+                is_png = sniffed == "image/png"
+                is_jpeg = sniffed == "image/jpeg"
                 is_image = sniffed in ("image/png", "image/jpeg", "image/webp")
 
                 if is_pdf:
@@ -1068,7 +1070,8 @@ class Handler(BaseHTTPRequestHandler):
 
             receipts = []
             img_size = get_image_size(img_bytes) if img_bytes else None
-            transcriber = _make_crop_transcriber() if img_bytes else None
+            is_pdf_upload = bool(file_bytes and is_pdf)
+            transcriber = _make_crop_transcriber() if (img_bytes or is_pdf_upload) else None
 
             for claim in extract_res.claims:
                 try:
@@ -1076,6 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
                         claim,
                         source_type,
                         text=doc_text,
+                        pdf_bytes=file_bytes if is_pdf_upload else None,
                         image_size=img_size,
                         image_bytes=img_bytes,
                         transcriber=transcriber,

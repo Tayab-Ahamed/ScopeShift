@@ -104,6 +104,76 @@ def verify_screenshot_crop(
         return False
 
 
+def render_pdf_page_to_image(pdf_bytes: bytes, page_index: int = 0) -> bytes:
+    """Render a PDF page to PNG image bytes using pypdfium2 (fallback pdf2image)."""
+    try:
+        import pypdfium2
+        doc = pypdfium2.PdfDocument(pdf_bytes)
+        try:
+            if page_index < len(doc):
+                page = doc[page_index]
+                pil_img = page.render(scale=2).to_pil()
+                buf = io.BytesIO()
+                pil_img.save(buf, format="PNG")
+                return buf.getvalue()
+        finally:
+            doc.close()
+    except Exception as exc:
+        logger.warning("pypdfium2 page rendering failed: %s", exc)
+    try:
+        from pdf2image import convert_from_bytes
+        images = convert_from_bytes(pdf_bytes, first_page=page_index + 1, last_page=page_index + 1)
+        if images:
+            buf = io.BytesIO()
+            images[0].save(buf, format="PNG")
+            return buf.getvalue()
+    except Exception as exc:
+        logger.warning("pdf2image page rendering failed: %s", exc)
+    return b""
+
+
+def verify_scanned_pdf_quote(
+    pdf_bytes: bytes,
+    quote: str,
+    region: tuple | list | None = None,
+    page_index: int = 0,
+    transcriber: Optional[Callable[[bytes], str]] = None,
+) -> tuple[bool, Optional[tuple]]:
+    """Verify quote from a scanned PDF:
+    1. Render PDF page to image with pypdfium2 / pdf2image.
+    2. If region provided, crop to region. Otherwise use full page.
+    3. Re-read region with separate transcriber call.
+    4. Deterministic string-match: quote_in_text(quote, visible_text).
+    If rendering or verifier is unavailable or fails: fails closed (False, None).
+    """
+    if not transcriber or not pdf_bytes or not quote:
+        return False, None
+
+    try:
+        page_img_bytes = render_pdf_page_to_image(pdf_bytes, page_index=page_index)
+        if not page_img_bytes:
+            logger.warning("Rendering PDF page failed or unavailable")
+            return False, None
+
+        img_size = get_image_size(page_img_bytes)
+        valid_region = None
+        if region is not None:
+            valid_region = _region_ok(region, img_size)
+            if valid_region is None:
+                # Region specified but out of bounds
+                return False, None
+            crop_bytes = crop_image(page_img_bytes, valid_region)
+        else:
+            crop_bytes = page_img_bytes
+
+        visible_text = transcriber(crop_bytes)
+        matched = quote_in_text(quote, visible_text)
+        return matched, valid_region
+    except Exception as exc:
+        logger.warning("Scanned PDF verification failed: %s", exc)
+        return False, None
+
+
 def _region_ok(region, size) -> tuple | None:
     if size is None or not isinstance(region, (list, tuple)) or len(region) != 4:
         return None
@@ -123,6 +193,7 @@ def validate_claim(
     text: str | None = None,
     image_size: tuple[int, int] | None = None,
     image_bytes: bytes | None = None,
+    pdf_bytes: bytes | None = None,
     transcriber: Optional[Callable[[bytes], str]] = None,
     allow_preverified: bool = False,
     sender: str | None = None,
@@ -173,6 +244,16 @@ def validate_claim(
             else:
                 # Unit tests passing raw image_size without image_bytes
                 verified = bool(quote)
+    elif pdf_bytes is not None and (text is None or len(text.strip()) < 50):
+        # Scanned PDF handling: pypdf extracted almost no text (< 50 chars)
+        # Verify via rendering the PDF page to an image and re-reading with transcriber
+        raw_reg = raw.get("region")
+        verified, region = verify_scanned_pdf_quote(
+            pdf_bytes=pdf_bytes,
+            quote=quote,
+            region=raw_reg,
+            transcriber=transcriber,
+        )
     else:
         if text is None:
             raise ValidationError("source text is required to verify quotes")
