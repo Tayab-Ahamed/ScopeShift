@@ -390,6 +390,7 @@ class Extractor:
         self.retry_delay_base = retry_delay_base
         self._client = None
         self._vertex = vertex_extractor
+        self.safe_mode = bool(os.environ.get("SCOPESHIFT_SAFE_MODE", "0") in ("1", "true", "True"))
         self.last_failure_reason: Optional[str] = None
 
         if self.api_key:
@@ -413,6 +414,8 @@ class Extractor:
     @property
     def route(self) -> str:
         """True extraction route: live-gemini, live-vertex, or offline."""
+        if self.safe_mode:
+            return "offline (safe-mode)"
         if self._client:
             return "live-gemini"
         vx = self._get_vertex()
@@ -422,6 +425,8 @@ class Extractor:
 
     def effective_mode(self) -> str:
         """Honest extraction route for the status endpoint."""
+        if self.safe_mode:
+            return "deterministic-fallback (safe mode)"
         if self._client:
             return "live"
         vx = self._get_vertex()
@@ -557,6 +562,8 @@ class Extractor:
     def extract_from_text(
         self, text: str, source_type: str, force_fallback: bool = False
     ) -> ExtractionResult:
+        if self.safe_mode:
+            force_fallback = True
         start_time = time.time()
         last_reason: Optional[str] = None
         last_error_type: Optional[str] = None
@@ -643,6 +650,8 @@ class Extractor:
         force_fallback: bool = False,
         source_type: str = "screenshot",
     ) -> ExtractionResult:
+        if self.safe_mode:
+            force_fallback = True
         start_time = time.time()
         last_reason: Optional[str] = None
         last_error_type: Optional[str] = None
@@ -733,6 +742,8 @@ class Extractor:
         force_fallback: bool = False,
         source_type: str = "brd",
     ) -> ExtractionResult:
+        if self.safe_mode:
+            force_fallback = True
         start_time = time.time()
         last_reason: Optional[str] = None
         last_error_type: Optional[str] = None

@@ -1558,6 +1558,9 @@
           el.classList.toggle('connected', !!st.connected);
           el.title = `${key}: ${st.connected ? 'connected' : 'local mirror active'} — ${st.reason || ''}`;
         }
+        // Update Safe Mode status
+        updateSafeModeUI(Boolean(data.safe_mode || (data.extraction && data.extraction.safe_mode)));
+
         // True route pill and failure reason (Task 3)
         const route = data.route || (data.extraction && data.extraction.route) || 'offline';
         const failReason = data.last_failure_reason || (data.extraction && data.extraction.last_failure_reason);
@@ -1574,6 +1577,9 @@
           } else if (route === 'live-vertex') {
             extractionModeText.textContent = 'ROUTE: LIVE-VERTEX';
             extractionModePill?.classList.add('live');
+          } else if (route.includes('safe-mode')) {
+            extractionModeText.textContent = 'ROUTE: OFFLINE (SAFE MODE)';
+            extractionModePill?.classList.remove('live');
           } else {
             extractionModeText.textContent = 'ROUTE: OFFLINE' + (failReason ? ` (${failReason.slice(0, 30)})` : '');
             extractionModePill?.classList.remove('live');
@@ -1585,6 +1591,41 @@
       })
       .catch(() => { /* badges keep their muted "local" default */ });
   }
+
+  const btnSafeMode = document.querySelector('#btn-safe-mode');
+
+  function updateSafeModeUI(isSafe) {
+    if (!btnSafeMode) return;
+    if (isSafe) {
+      btnSafeMode.textContent = '🛡 Safe Mode: ON';
+      btnSafeMode.classList.add('active');
+      btnSafeMode.style.borderColor = 'var(--emerald)';
+      btnSafeMode.style.color = 'var(--emerald)';
+    } else {
+      btnSafeMode.textContent = '🛡 Safe Mode: OFF';
+      btnSafeMode.classList.remove('active');
+      btnSafeMode.style.borderColor = '';
+      btnSafeMode.style.color = '';
+    }
+  }
+
+  async function toggleSafeMode() {
+    try {
+      const res = await fetch('/api/demo/safe-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      updateSafeModeUI(data.safe_mode);
+      refreshCloudStatus();
+      showToast(data.safe_mode ? 'Demo Safe Mode ENABLED: live APIs bypassed, offline fallback active' : 'Demo Safe Mode DISABLED: live API routes active');
+    } catch (err) {
+      console.error('Failed to toggle safe mode:', err);
+    }
+  }
+
+  btnSafeMode?.addEventListener('click', toggleSafeMode);
 
   // --------------------------------------------------------------------------
   // Provenance Inspector: side-by-side evidence for the headline claim,

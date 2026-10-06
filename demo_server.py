@@ -165,6 +165,7 @@ MUTATING_PATHS = {
     "/api/demo/reset",
     "/api/events",
     "/api/webhook/inbound",
+    "/api/demo/safe-mode",
 }
 
 # Tier 1 GCP integrations (Stream B): env-gated, import-guarded, honest no-ops
@@ -820,17 +821,17 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/cloud/status":
-            # Honest backend status for the UI pill cluster: each service reports
-            # connected (live) or disconnected-with-reason (local mirror active).
             route = EXTRACTOR.route
             ext_mode = EXTRACTOR.effective_mode()
             self.send_json({
                 "bigquery": BQ_LOG.status(),
                 "gcs": GCS.status(),
                 "vertex": VERTEX.status(),
+                "safe_mode": EXTRACTOR.safe_mode,
                 "extraction": {
                     "mode": ext_mode,
                     "route": route,
+                    "safe_mode": EXTRACTOR.safe_mode,
                     "last_failure_reason": EXTRACTOR.last_failure_reason,
                 },
                 "route": route,
@@ -1262,6 +1263,19 @@ class Handler(BaseHTTPRequestHandler):
                 "claims_processed": len(receipts),
                 "receipts": receipts,
                 "state": STORE.snapshot(),
+            }, 200)
+            return
+
+        if path == "/api/demo/safe-mode":
+            if "enabled" in data:
+                EXTRACTOR.safe_mode = bool(data["enabled"])
+            else:
+                EXTRACTOR.safe_mode = not EXTRACTOR.safe_mode
+            self.send_json({
+                "ok": True,
+                "safe_mode": EXTRACTOR.safe_mode,
+                "route": EXTRACTOR.route,
+                "mode": EXTRACTOR.effective_mode(),
             }, 200)
             return
 
