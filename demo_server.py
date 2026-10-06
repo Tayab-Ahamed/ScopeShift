@@ -1319,4 +1319,12 @@ def _upload_fixtures_to_gcs() -> None:
 
 
 if __name__ == "__main__":
+    if (ROOT / ".env").exists():
+        try:
+            import dotenv
+            dotenv.load_dotenv(ROOT / ".env")
+        except Exception:
+            pass
+    EXTRACTOR = Extractor(vertex_extractor=VERTEX)
+    STORE = create_demo_store()
     run_server()

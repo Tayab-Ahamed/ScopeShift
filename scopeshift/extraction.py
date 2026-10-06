@@ -31,13 +31,20 @@ CLAIM_ID_LITERAL = Literal[
 
 
 def is_model_unavailable_error(exc: Exception) -> bool:
-    """Detect if an error is a 404 or model unavailable error indicating model failover."""
+    """Detect if an error is a 404, 503, 429 quota exhaustion, or model unavailable error indicating model failover."""
     code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
-    if code == 404:
+    if code in (404, 503, 429):
         return True
     msg = str(exc).lower()
     patterns = [
         "404",
+        "503",
+        "429",
+        "unavailable",
+        "high demand",
+        "resource_exhausted",
+        "quota exceeded",
+        "exceeded your current quota",
         "not found",
         "not_found",
         "model no longer available",
@@ -50,7 +57,7 @@ def is_model_unavailable_error(exc: Exception) -> bool:
 
 
 class ClaimExtractionSchema(BaseModel):
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "ignore"}
 
     claim_id: CLAIM_ID_LITERAL = Field(description="Must be one of the registered claim IDs")
     observation: str = Field(default="", description="Concise factual summary of what the document says or shows")
@@ -631,7 +638,10 @@ class Extractor:
         )
 
     def extract_from_image(
-        self, image_input: Path | str | bytes, force_fallback: bool = False
+        self,
+        image_input: Path | str | bytes,
+        force_fallback: bool = False,
+        source_type: str = "screenshot",
     ) -> ExtractionResult:
         start_time = time.time()
         last_reason: Optional[str] = None
@@ -718,7 +728,10 @@ class Extractor:
         )
 
     def extract_from_pdf(
-        self, pdf_input: Path | str | bytes, force_fallback: bool = False
+        self,
+        pdf_input: Path | str | bytes,
+        force_fallback: bool = False,
+        source_type: str = "brd",
     ) -> ExtractionResult:
         start_time = time.time()
         last_reason: Optional[str] = None

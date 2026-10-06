@@ -117,4 +117,10 @@ def run_smoke() -> int:
 
 
 if __name__ == "__main__":
+    if "GEMINI_API_KEY" not in os.environ and (REPO_ROOT / ".env").exists():
+        try:
+            import dotenv
+            dotenv.load_dotenv(REPO_ROOT / ".env")
+        except Exception:
+            pass
     sys.exit(run_smoke())

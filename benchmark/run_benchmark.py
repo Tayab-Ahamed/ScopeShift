@@ -427,4 +427,10 @@ def main():
 
 
 if __name__ == "__main__":
+    if "GEMINI_API_KEY" not in os.environ and not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            import dotenv
+            dotenv.load_dotenv()
+        except Exception:
+            pass
     main()
