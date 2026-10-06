@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,8 +39,75 @@ from scopeshift.validation import (
 
 ROOT = Path(__file__).parent.resolve()
 FIXTURES_DIR = ROOT / "fixtures"
-MAX_BODY = 16 * 1024 * 1024
+MAX_BODY = 10 * 1024 * 1024  # 10 MB maximum upload size
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "text/plain",
+}
+
+
+def sniff_mime_type(data: bytes) -> str | None:
+    """Sniff MIME type from bytes, not filenames."""
+    if not data:
+        return None
+    if data.startswith(b"%PDF"):
+        return "application/pdf"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
+        return "image/webp"
+    try:
+        decoded = data.decode("utf-8")
+        if "\x00" not in decoded and not any(ord(c) < 32 and c not in "\r\n\t" for c in decoded[:1024]):
+            return "text/plain"
+    except UnicodeDecodeError:
+        pass
+    return None
+
+
+import collections
+_RATE_LIMIT_STORE: dict[str, list[float]] = collections.defaultdict(list)
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def check_rate_limit(client_ip: str, limit_per_minute: int = 30) -> tuple[bool, int]:
+    """Returns (is_allowed, retry_after_seconds). Sliding 60s window."""
+    now = time.time()
+    window = 60.0
+    with _RATE_LIMIT_LOCK:
+        timestamps = _RATE_LIMIT_STORE[client_ip]
+        _RATE_LIMIT_STORE[client_ip] = [t for t in timestamps if now - t < window]
+        timestamps = _RATE_LIMIT_STORE[client_ip]
+        if len(timestamps) >= limit_per_minute:
+            oldest = timestamps[0]
+            retry_after = max(1, int(window - (now - oldest)))
+            return False, retry_after
+        timestamps.append(now)
+        return True, 0
+
+
+def reset_rate_limits() -> None:
+    with _RATE_LIMIT_LOCK:
+        _RATE_LIMIT_STORE.clear()
+
+
+MUTATING_PATHS = {
+    "/api/extract",
+    "/api/ingest",
+    "/api/govern",
+    "/api/withdraw",
+    "/api/reset",
+    "/api/demo/reset",
+    "/api/events",
+    "/api/webhook/inbound",
+}
 
 # Tier 1 GCP integrations (Stream B): env-gated, import-guarded, honest no-ops
 # when SDKs / env vars / credentials are missing. Never raise at import.
@@ -814,10 +882,37 @@ class Handler(BaseHTTPRequestHandler):
 
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length > MAX_BODY:
-            self.send_json({"error": {"code": "PAYLOAD_TOO_LARGE", "message": "Payload exceeds limit"}}, 413)
+            self.send_json({
+                "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": f"Payload exceeds maximum allowed upload size of 10 MB ({content_length} > {MAX_BODY} bytes)"
+                }
+            }, 413)
             return
 
+        # Optional shared-secret auth for mutating endpoints
+        api_token = os.environ.get("SCOPESHIFT_API_TOKEN")
+        if api_token and path in MUTATING_PATHS:
+            auth = self.headers.get("Authorization", "")
+            if auth != f"Bearer {api_token}":
+                self.send_json({
+                    "error": {
+                        "code": "UNAUTHORIZED",
+                        "message": "Unauthorized: valid Bearer token required"
+                    }
+                }, 401)
+                return
+
         body_bytes = self.rfile.read(content_length) if content_length > 0 else b"{}"
+        if len(body_bytes) > MAX_BODY:
+            self.send_json({
+                "error": {
+                    "code": "PAYLOAD_TOO_LARGE",
+                    "message": f"Payload exceeds maximum allowed upload size of 10 MB ({len(body_bytes)} > {MAX_BODY} bytes)"
+                }
+            }, 413)
+            return
+
         ctype = self.headers.get("Content-Type", "")
         if ctype.startswith("multipart/form-data"):
             import io
@@ -830,6 +925,23 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
         if path == "/api/extract":
+            client_ip = self.client_address[0] if self.client_address else "127.0.0.1"
+            rate_limit_env = os.environ.get("SCOPESHIFT_RATE_LIMIT_PER_MINUTE", "30")
+            try:
+                limit_val = int(rate_limit_env)
+            except ValueError:
+                limit_val = 30
+            allowed, retry_after = check_rate_limit(client_ip, limit_val)
+            if not allowed:
+                self.send_json({
+                    "error": {
+                        "code": "RATE_LIMIT_EXCEEDED",
+                        "message": f"Rate limit exceeded: maximum {limit_val} requests per minute",
+                        "retry_after": retry_after,
+                    }
+                }, 429)
+                return
+
             import base64
             source_type = data.get("source_type") or "client_note"
             text = data.get("text")
@@ -860,10 +972,18 @@ class Handler(BaseHTTPRequestHandler):
             extract_res = None
 
             if file_bytes:
-                is_pdf = file_bytes.startswith(b"%PDF") or filename.lower().endswith(".pdf")
-                is_png = file_bytes.startswith(b"\x89PNG") or filename.lower().endswith(".png")
-                is_jpeg = file_bytes.startswith(b"\xff\xd8\xff") or filename.lower().endswith((".jpg", ".jpeg"))
-                is_image = is_png or is_jpeg or file_bytes.startswith(b"RIFF")
+                sniffed = sniff_mime_type(file_bytes)
+                if sniffed is None or sniffed not in ALLOWED_MIME_TYPES:
+                    self.send_json({
+                        "error": {
+                            "code": "UNSUPPORTED_MEDIA_TYPE",
+                            "message": f"Unsupported media type: sniffed format is not allowed (must be one of {sorted(ALLOWED_MIME_TYPES)})"
+                        }
+                    }, 415)
+                    return
+
+                is_pdf = sniffed == "application/pdf"
+                is_image = sniffed in ("image/png", "image/jpeg", "image/webp")
 
                 if is_pdf:
                     source_type = data.get("source_type") or "brd"
@@ -970,7 +1090,7 @@ class Handler(BaseHTTPRequestHandler):
             }, 200)
             return
 
-        if path == "/api/demo/reset":
+        if path in ("/api/demo/reset", "/api/reset"):
             if os.environ.get("SCOPESHIFT_DB"):
                 self.send_json({"error": {"code": "CONFLICT", "message": "Reset disabled for persisted databases"}}, 409)
                 return

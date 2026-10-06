@@ -785,7 +785,7 @@
             <p style="margin: 0 0 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${escapeHtml(r.rule || '')}</p>
             <div class="card-bottombar">
               <span>Authority: <strong>${escapeHtml(r.governing_source || 'Baseline')}</strong></span>
-              <span>Citations: [${r.citations ? r.citations.map(c => c.source_id).join(', ') : ''}]</span>
+              <span>Citations: [${r.citations ? r.citations.map(c => escapeHtml(c.source_id)).join(', ') : ''}]</span>
             </div>
           `;
           brdEl.appendChild(card);
