@@ -91,4 +91,4 @@ If a live extractor fails, the pill displays the exact `last_failure_reason`.
 
 - ❌ Never claim live extraction when running offline — point to the route indicator pill.
 - ❌ Never claim model approval — always: *"Gemini proposes claims; code validates citations and decides authority."*
-- ❌ Never claim benchmark results without running: `python benchmark/run_benchmark.py`
+- ❌ Never claim benchmark results without running: `python benchmark/run_benchmark.py` (state plainly: benchmark has not been run; `results.md` does not exist yet).

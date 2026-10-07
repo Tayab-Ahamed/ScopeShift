@@ -56,10 +56,9 @@ In accordance with project integrity constraints:
   - Reason: `GOOGLE_APPLICATION_CREDENTIALS` / `GOOGLE_CLOUD_PROJECT` are not configured in this local environment.
   - Verification: `python scripts/verify_cloud.py` correctly identified all missing variables and exited with code `1` rather than faking a PASS.
 - **Live Gemini Benchmark Execution (`benchmark/results.json`, `benchmark/results.md`):**
-  - Status: **PAUSED ON QUOTA (Documented in [`docs/LIVE_RUN_LOG.md`](docs/LIVE_RUN_LOG.md))**
-  - Reason: Free-tier daily quota exhausted after live probe verification runs; continuous batch benchmarking halted.
-  - Verification: Cleanly exits with code `1` without fabricating numbers. Baseline benchmark results remain intact in `benchmark/results.md`.
+  - Status: **NOT RUN**
+  - Note: Benchmark has not been run; `benchmark/results.md` and `benchmark/results.json` do not exist yet.
+  - Verification: `python benchmark/run_benchmark.py` will generate unedited results when sustained quota or billing is available. Cleanly exits with code `1` if keys or quota are missing without fabricating numbers; harness verified in `tests/test_benchmark.py`.
 - **Docker Container Daemon Execution:**
-  - Status: **BLOCKED ON LOCAL DAEMON**
-  - Reason: Docker CLI is installed, but the local Docker Engine / Docker Desktop daemon is not running.
-  - Verification: Dockerfile, `.dockerignore`, and deployment runbooks are verified and ready for production build.
+  - Status: **PASSED (Documented in [`docs/LIVE_RUN_LOG.md`](docs/LIVE_RUN_LOG.md))**
+  - Verification: `docker build -t scopeshift:latest .` packaged container cleanly, `docker run` started container, and `GET http://127.0.0.1:8769/api/health` returned HTTP 200 `{"status": "ok", "version": "1.0.0", "persisted": true}`. Built-in HEALTHCHECK verified passing.

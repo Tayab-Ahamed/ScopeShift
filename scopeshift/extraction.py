@@ -386,7 +386,10 @@ class Extractor:
             self.fallbacks = list(fallbacks)
         else:
             fb_env = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS", "gemini-3.5-flash")
-            self.fallbacks = [m.strip() for m in fb_env.split(",") if m.strip()]
+            if fb_env.strip().lower() in ("none", "off", "0", ""):
+                self.fallbacks = []
+            else:
+                self.fallbacks = [m.strip() for m in fb_env.split(",") if m.strip()]
         self.retry_delay_base = retry_delay_base
         self._client = None
         self._vertex = vertex_extractor

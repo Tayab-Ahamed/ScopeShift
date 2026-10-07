@@ -147,6 +147,9 @@ To verify Google Cloud service connectivity (Vertex AI, Cloud Storage, BigQuery)
 python scripts/verify_cloud.py
 ```
 
+> [!NOTE]
+> **Benchmark Status:** Plainly stated: the live comparative benchmark has not been run; `benchmark/results.md` and `benchmark/results.json` do not exist yet. Run `python benchmark/run_benchmark.py` once quota or billing is available to generate unedited benchmark results.
+
 ### Optional Live Configuration
 ScopeShift is built **fail-safe and offline-first**. All features function locally out-of-the-box. Optional live Gemini and GCP integrations activate automatically when environment variables are present:
 

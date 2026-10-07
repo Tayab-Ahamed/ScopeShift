@@ -120,7 +120,7 @@
   - [x] Automated tests passing & committed (`3caee26`)
 
 - [x] **TASK F - Container & Deploy Readiness**
-  - [x] Verified `Dockerfile` and documented Docker daemon BLOCKED state honestly in `docs/LIVE_RUN_LOG.md`
+  - [x] Executed live Docker Desktop build (`docker build -t scopeshift:latest .`), container run, and verified container `/api/health` 200 response (documented in `docs/LIVE_RUN_LOG.md`)
   - [x] Created `run_demo.py` and `run_demo.ps1` with automated `/api/health` polling and browser launching
   - [x] Added visible UI "Demo Safe Mode" toggle in navigation header forcing offline deterministic route
   - [x] Tests in `tests/test_safe_mode.py` verifying safe mode route enforcement and healthcheck polling

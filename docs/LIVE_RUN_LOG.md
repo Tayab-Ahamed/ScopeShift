@@ -10,13 +10,25 @@
 
 The live smoke probe was executed directly against Google Gemini Developer API using the official `google-genai` SDK.
 
+### 1.1 Multi-Model Failover Live Probe (2026-10-06)
+
 | Modality | Input | Target Model | Answering Model | Status | Claims Extracted | Latency |
 |:---|:---|:---|:---|:---:|:---:|:---|
 | **Text** | Pasted scope change note | `gemini-3.6-flash` | `gemini-2.5-flash` (auto failover) | **PASS** | 2 | 7,771.8 ms |
 | **PDF** | `fixtures/brd.pdf` (raw bytes) | `gemini-3.6-flash` | `gemini-2.5-flash` (auto failover) | **PASS** | 3 | 13,463.1 ms |
 | **Image** | `fixtures/checkout.png` (bytes) | `gemini-3.6-flash` | `gemini-2.5-flash` (auto failover) | **PASS** | 3 | 8,637.4 ms |
 
-**Result:** All 3 modalities passed live execution (`exit code 0`).
+### 1.2 Direct Zero-Fallback Probe: `gemini-3.6-flash` Only (2026-10-07)
+
+Executed with `SCOPESHIFT_GEMINI_MODEL=gemini-3.6-flash SCOPESHIFT_GEMINI_FALLBACKS=` (no fallbacks):
+
+| Modality | Input | Target Model | Answering Model | Status | Claims | Latency / Error Details |
+|:---|:---|:---|:---|:---:|:---:|:---|
+| **Text** | Pasted scope change note | `gemini-3.6-flash` | `gemini-3.6-flash` | **PASS** | 2 | 8,507.5 ms |
+| **PDF** | `fixtures/brd.pdf` (raw bytes) | `gemini-3.6-flash` | None (fail closed) | **FAIL** | 0 | `ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}` |
+| **Image** | `fixtures/checkout.png` | `gemini-3.6-flash` | — | **STOPPED** | — | Stopped per instructions after PDF failure |
+
+**Observation:** `gemini-3.6-flash` successfully extracted structured claims from raw text (8.5 s), but failed on multi-modal PDF processing with remote `503 UNAVAILABLE` (high demand spike). With fallbacks disabled, the engine fails closed as designed. Benchmark run paused per instructions.
 
 ---
 
@@ -42,13 +54,23 @@ The live smoke probe was executed directly against Google Gemini Developer API u
 
 ## 3. Quota and Benchmark Status
 
-- **Live Daily Quota**: Following the successful live probe runs, the Google Cloud free tier quota (20 requests/day per project per model) reached daily exhaustion for `gemini-3.6-flash`, `gemini-3.5-flash`, and `gemini-2.5-flash`.
-- **Benchmark Run**: Further automated runs of `benchmark/run_benchmark.py` (which requires 24+ calls across 3 iterations) are cleanly paused in accordance with the project rule: *Never fabricate benchmark numbers. If an API key or credentials are missing/exhausted, say so and stop that step.* Existing benchmark baseline numbers in `benchmark/results.md` remain intact.
+- **Benchmark Run**: Benchmark has not been run; `benchmark/results.md` and `benchmark/results.json` do not exist yet. Automated execution of `benchmark/run_benchmark.py` requires 24+ live API calls across 3 iterations and will only be run once sustained quota or billing is available. In accordance with the project rule: *Never fabricate benchmark numbers. If an API key or credentials are missing/exhausted, say so and stop that step.*
+- **Live Daily Quota**: Following the initial live probe runs, free-tier per-model daily limits restrict continuous batch benchmarking runs.
 
 ---
 
-## 4. Container Deployment Readiness (Docker)
+## 4. Latency Characteristics
 
-- **Docker Status:** **BLOCKED**
-- **Diagnostic:** Docker CLI version 29.8.0 is installed, but the local Docker Engine / Docker Desktop daemon is not running (`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`).
-- Per project rules, container execution is reported as BLOCKED without fabricated outputs.
+**Latency Note:** Live extraction takes approximately 8–13 s per call (observed: 7.8 s text, 13.5 s PDF, 8.6 s image). This latency is driven by full multi-modal document upload, strict structured JSON schema enforcement, remote Gemini multi-modal reasoning, and fail-closed code-level verification.
+
+---
+
+## 5. Container Deployment Readiness (Docker)
+
+- **Docker Status:** **VERIFIED & PASSING (2026-10-07)**
+- **Diagnostic & Verification:**
+  - Docker Desktop daemon initialized via local engine on Windows / WSL2.
+  - Image build executed: `docker build -t scopeshift:latest .` (successfully packaged Python 3.11-slim, all dependencies including `google-genai`, `pypdfium2`, `Pillow`, and non-root user `scopeshift`).
+  - Container execution: `docker run -d --name scopeshift-test -p 8769:8765 scopeshift:latest`.
+  - Healthcheck verification: `GET http://127.0.0.1:8769/api/health` returned HTTP `200` with payload `{"status": "ok", "version": "1.0.0", "persisted": true}`. Built-in Dockerfile HEALTHCHECK verified passing.
+  - Container safely stopped and cleaned.

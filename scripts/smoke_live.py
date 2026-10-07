@@ -34,12 +34,19 @@ def run_smoke() -> int:
         return 1
 
     model = os.environ.get("SCOPESHIFT_GEMINI_MODEL", "gemini-3.6-flash")
-    fallbacks = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS", "gemini-3.5-flash")
+    raw_fb = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS", "gemini-3.5-flash")
+    if "--no-fallbacks" in sys.argv or raw_fb.strip().lower() in ("none", "off", "0", ""):
+        fallbacks = ""
+        fb_list = []
+    else:
+        fallbacks = raw_fb
+        fb_list = [m.strip() for m in fallbacks.split(",") if m.strip()]
+
     print(f"ScopeShift Live Smoke Probe")
     print(f"Target model: {model} (fallbacks: {fallbacks})")
     print("-" * 50)
 
-    extractor = Extractor(api_key=api_key)
+    extractor = Extractor(api_key=api_key, model=model, fallbacks=fb_list)
     if not extractor._client:
         print("ERROR: Failed to initialize Gemini client.", file=sys.stderr)
         return 1
@@ -117,10 +124,13 @@ def run_smoke() -> int:
 
 
 if __name__ == "__main__":
-    if "GEMINI_API_KEY" not in os.environ and (REPO_ROOT / ".env").exists():
+    pre_fb = os.environ.get("SCOPESHIFT_GEMINI_FALLBACKS")
+    if (REPO_ROOT / ".env").exists():
         try:
             import dotenv
             dotenv.load_dotenv(REPO_ROOT / ".env")
+            if pre_fb is not None:
+                os.environ["SCOPESHIFT_GEMINI_FALLBACKS"] = pre_fb
         except Exception:
             pass
     sys.exit(run_smoke())
