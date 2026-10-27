@@ -55,9 +55,11 @@ def is_sender_allowlisted(sender: Optional[str], channel: Optional[str] = None) 
         name = app.get("name", "").strip().casefold()
         email_addr = app.get("email", "").strip().casefold()
         matched = False
-        if name and (s_norm == name or name in s_norm or s_norm in name):
+        # A substring is not an identity: even a single letter or an attacker
+        # address containing an approved email must not grant authority.
+        if name and s_norm == name:
             matched = True
-        elif email_addr and (s_norm == email_addr or email_addr in s_norm or s_norm in email_addr):
+        elif email_addr and s_norm == email_addr:
             matched = True
 
         if matched:
