@@ -203,11 +203,11 @@ def evaluate_scopeshift_stage3(store: EventStore) -> dict:
         region=None,
         event_sequence=3,
         active=False,
-        sender="Priya Nair (Product Owner)",
+        sender="Priya Nair",
         channel="slack",
     )
     store.seed([ev3])
-    store.add_event("SRC-03", "ADDED", sender="Priya Nair (Product Owner)", channel="slack")
+    store.add_event("SRC-03", "ADDED", sender="Priya Nair", channel="slack")
     snap = store.snapshot()
     res = snap["resolutions"].get("checkout.payment_methods", {})
     return {
